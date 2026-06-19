@@ -11,7 +11,7 @@ interface KPIMapping {
   displayName: string;
   excelColumnKeyword: string;
   category: "Quality" | "Productivity" | "Compliance";
-  isHexFavorite: boolean; // Tracks if part of the 6 Hexagon vertices
+  isHexFavorite: boolean; 
 }
 
 interface DynamicAgent {
@@ -173,7 +173,6 @@ export default function BlueLockMA() {
     reader.readAsBinaryString(file);
   };
 
-  // Helper function to toggle a KPI's favorite status
   const toggleHexFavorite = (id: string) => {
     const activeFavoritesCount = kpiRegistry.filter(k => k.isHexFavorite).length;
     const targets = kpiRegistry.find(k => k.id === id);
@@ -199,11 +198,11 @@ export default function BlueLockMA() {
     for (let i = 0; i < 6; i++) {
       const angle = (i * 60 - 90) * (Math.PI / 180);
       const kpi = runningHexKPIs[i];
-      let performancePct = 0.75; // Baseline layout display ratio if values are blank
+      let performancePct = 0.75; 
       
       if (kpi && currentAgentData) {
         const records = masterHistoryMap[currentAgentData.login] || [];
-        const latest = records[recs => recs.length - 1];
+        const latest = records[records.length - 1];
         const rawScore = latest ? latest.metrics[kpi.id] || latest.metrics[kpi.excelColumnKeyword] : null;
         
         if (typeof rawScore === "number") {
@@ -278,21 +277,18 @@ export default function BlueLockMA() {
                   </div>
                 </div>
 
-                {/* ⬡ THE 6-FAVORITE CONFIGURED MATRIX HEXAGON (SITS VISIBLY BELOW THE FIFA CARD) */}
+                {/* ⬡ THE 6-FAVORITE CONFIGURED MATRIX HEXAGON */}
                 <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "20px", textAlign: "center" }}>
                   <h4 style={{ color: theme.accent, margin: "0 0 4px 0", fontSize: "13px", textAlign: "left" }}>⬡ EGO MATRIX FAVORITES (0-100)</h4>
                   <p style={{ fontSize: "11px", color: theme.textMuted, textAlign: "left", margin: "0 0 12px 0" }}>Starred choice items map to vertices dynamically.</p>
                   
                   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", position: "relative" }}>
                     <svg width="220" height="220" viewBox="0 0 200 200">
-                      {/* Grid Guide Framework Rings */}
                       <polygon points="100,25 175,68 175,153 100,195 25,153 25,68" fill="none" stroke={theme.border} strokeWidth="1" />
-                      <polygon points="100,50 150,79 150,136 100,165 50,136 50,79" fill="none" stroke={theme.border} strokeDasharray="3" />
+                      <polygon points="100,50 150,79 150,136 100,165 50,136 50,79" fill="none" stroke={theme.border} strokeWidth="1" strokeDasharray="3" />
                       
-                      {/* Calculated Performance Threshold Fill Area */}
                       <polygon points={renderDynamicHexPoints()} fill="rgba(0, 240, 255, 0.25)" stroke={theme.accent} strokeWidth="2.5" />
                       
-                      {/* Labels around corners */}
                       {runningHexKPIs.map((kpi, idx) => {
                         const angle = (idx * 60 - 90) * (Math.PI / 180);
                         const labelRadius = 88;
@@ -357,7 +353,7 @@ export default function BlueLockMA() {
       )}
 
       {/* ==========================================
-          ⚙️ TAB 2: SEPARATED PARAMETERS PANEL WITH FAVORITES STAR
+          ⚙️ TAB 2: PARAMETERS SETTINGS PANEL
          ========================================== */}
       {activeTab === "parameters" && (
         <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "32px" }}>
@@ -397,7 +393,7 @@ export default function BlueLockMA() {
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               <label style={{ fontSize: "12px", color: theme.accent }}>Select Detected Column From Menu</label>
               <select value={selectedHeaderFromDropdown} onChange={e => setSelectedHeaderFromDropdown(e.target.value)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }}>
-                {allDetectedHeaders.length === 0 ? <option>-- Ingest file to read headers --</option> : allDetectedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                {allDetectedHeaders.length === 0 ? <option>-- Ingest a file to read headers --</option> : allDetectedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
               </select>
             </div>
 
@@ -440,6 +436,27 @@ export default function BlueLockMA() {
                 </button>
               </div>
             ))}
+          </div>
+
+          {/* LOCALIZED LEDGER TIMELINE SCREEN */}
+          <div style={{ marginTop: "40px", paddingTop: "24px", borderTop: `1px solid ${theme.border}` }}>
+            <h3 style={{ color: theme.accent }}>📜 Local Run Record History Ledger</h3>
+            {!selectedAgentLogin ? <p style={{ color: theme.textMuted }}>Select an Egoist at the top view to generate target run records maps.</p> : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginTop: "16px" }}>
+                {activeAgentHistory.map((run, index) => (
+                  <div key={index} style={{ backgroundColor: theme.bg, padding: "20px", borderRadius: "8px", border: `1px solid ${theme.border}`, borderLeft: `4px solid ${theme.accent}` }}>
+                    <h4 style={{ margin: "0 0 10px 0", color: theme.accentGold }}>{run.weekId} Run Upload Log</h4>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "12px" }}>
+                      {kpiRegistry.map(kpi => {
+                        const score = run.metrics[kpi.id] || run.metrics[kpi.excelColumnKeyword] || "—";
+                        const formatted = typeof score === "number" ? (score < 1 ? `${(score * 100).toFixed(1)}%` : score.toFixed(1)) : score;
+                        return <div key={kpi.id} style={{ color: theme.textMuted }}>{kpi.displayName}: <span style={{ color: theme.textLight, fontWeight: "bold" }}>{formatted}</span></div>
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

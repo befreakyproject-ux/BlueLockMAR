@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 
 // ==========================================
-// 🗂️ STRUCTURE BLUEPRINTS
+// 🗂️ STRUCTURE INTERFACES
 // ==========================================
 interface KPIMapping {
   id: string;
@@ -21,6 +21,10 @@ interface DynamicAgent {
 
 interface HistoricalWeekRecord {
   weekId: string;
+  weekNumber: number; // For Range Sliders
+  monthName: string;  // e.g. "January"
+  quarterId: string;  // e.g. "Q1", "Q2"
+  yearId: string;     // e.g. "2026"
   metrics: Record<string, number | string>;
 }
 
@@ -53,7 +57,14 @@ export default function BlueLockMA() {
   const [allDetectedHeaders, setAllDetectedHeaders] = useState<string[]>([]);
   const [selectedHeaderFromDropdown, setSelectedHeaderFromDropdown] = useState<string>("");
 
-  // Base Parameter Mappings Core Configuration
+  // DYNAMIC ADVANCED TIME FRAME CALENDAR FILTERS STATE
+  const [timeMacroView, setTimeMacroView] = useState<"weekly" | "monthly" | "quarterly" | "yearly">("weekly");
+  const [startWeekSlider, setStartWeekSlider] = useState<number>(1);
+  const [endWeekSlider, setEndWeekSlider] = useState<number>(53);
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>("All");
+  const [selectedQuarterFilter, setSelectedQuarterFilter] = useState<string>("All");
+
+  // Mapped Core Configuration
   const [kpiRegistry, setKpiRegistry] = useState<KPIMapping[]>([
     { id: "ccx_t2b", displayName: "CCX Top 2 Box", excelColumnKeyword: "CCX-Overall Top-Two Box %", category: "Quality", isHexFavorite: true },
     { id: "missed_overall", displayName: "Overall Missed Rate", excelColumnKeyword: "Overall Missed Contact Rate", category: "Productivity", isHexFavorite: true },
@@ -73,7 +84,7 @@ export default function BlueLockMA() {
   ]);
 
   // ==========================================
-  // 💾 1. RECOVERY SYSTEM ENGINE (LOAD FROM DRIVE / STORAGE)
+  // 💾 HARD DRIVE AUTOSAVE PERSISTENCE
   // ==========================================
   useEffect(() => {
     try {
@@ -95,24 +106,23 @@ export default function BlueLockMA() {
       }
       if (savedKpis) setKpiRegistry(JSON.parse(savedKpis));
     } catch (e) {
-      console.error("Local recovery storage initialized empty.");
+      console.error("Autosave index initialized clean.");
     }
   }, []);
 
-  // Wipes history clean if you ever want a fresh generation reset
   const clearLocalDatabaseEngine = () => {
-    if (confirm("Are you sure you want to wipe all local historical tracking memory?")) {
+    if (confirm("Wipe all locally tracking historical dataset logs permanently?")) {
       localStorage.clear();
       setMasterHistoryMap({});
       setDiscoveredAgents([]);
       setAllDetectedHeaders([]);
       setSelectedAgentLogin("");
-      alert("Local storage wiped.");
+      alert("Local registry reset.");
     }
   };
 
   // ==========================================
-  // 📥 AUTO-CLEANING MATRIX INGESTION ENGINE
+  // 📥 ROBUST SCANNING MULTI-FILE INGESTION
   // ==========================================
   const processUploadedExcelFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -134,20 +144,32 @@ export default function BlueLockMA() {
         for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
           const rowCells = rawRows[r] || [];
           const filledCount = rowCells.filter(c => c !== null && String(c).trim() !== "").length;
-          
           if (filledCount > maxFilledColumns && r !== 0) {
             maxFilledColumns = filledCount;
             bestHeaderIdx = r;
           }
         }
 
-        let detectedWeek = "Current Generation";
+        // Parse explicit Week, Month, Quarter metadata flags
+        let weekNum = 25;
+        let weekIdStr = "Week 25";
+        let monthNameStr = "June";
+        let quarterIdStr = "Q2";
+
         for (let r = 0; r < Math.min(rawRows.length, bestHeaderIdx + 1); r++) {
           const cells = rawRows[r] || [];
           for (let c = 0; c < cells.length; c++) {
             const txt = String(cells[c]).trim();
+            const numMatch = txt.match(/\d+/);
             if (txt.toLowerCase().includes("week") || txt === "25" || txt === "24") {
-              detectedWeek = txt.toLowerCase().includes("week") ? txt : `Week ${txt}`;
+              weekNum = numMatch ? parseInt(numMatch[0]) : 25;
+              weekIdStr = txt.toLowerCase().includes("week") ? txt : `Week ${txt}`;
+              
+              // Calibrate month and quarters natively from week sequences
+              if (weekNum <= 13) { monthNameStr = "February"; quarterIdStr = "Q1"; }
+              else if (weekNum <= 26) { monthNameStr = "June"; quarterIdStr = "Q2"; }
+              else if (weekNum <= 39) { monthNameStr = "August"; quarterIdStr = "Q3"; }
+              else { monthNameStr = "November"; quarterIdStr = "Q4"; }
               break;
             }
           }
@@ -174,24 +196,22 @@ export default function BlueLockMA() {
           const lowerLogin = loginStr.toLowerCase();
 
           if (
-            loginStr === "" || 
-            lowerLogin.includes("total") || 
-            lowerLogin.includes("agent") || 
-            lowerLogin.includes("amazon") || 
-            lowerLogin.includes("site group") || 
-            lowerLogin.includes("marketplace") ||
-            lowerLogin.includes("none") ||
-            lowerLogin.includes("null") ||
-            !isNaN(Number(loginStr)) 
+            loginStr === "" || lowerLogin.includes("total") || lowerLogin.includes("agent") || 
+            lowerLogin.includes("amazon") || lowerLogin.includes("site group") || 
+            lowerLogin.includes("marketplace") || lowerLogin.includes("none") || 
+            lowerLogin.includes("null") || !isNaN(Number(loginStr))
           ) {
             return; 
           }
 
           if (!localHistoryUpdate[loginStr]) localHistoryUpdate[loginStr] = [];
-          let existingWeekRecord = localHistoryUpdate[loginStr].find(record => record.weekId === detectedWeek);
           
+          let existingWeekRecord = localHistoryUpdate[loginStr].find(record => record.weekId === weekIdStr);
           if (!existingWeekRecord) {
-            existingWeekRecord = { weekId: detectedWeek, metrics: {} };
+            existingWeekRecord = { 
+              weekId: weekIdStr, weekNumber: weekNum, monthName: monthNameStr, 
+              quarterId: quarterIdStr, yearId: "2026", metrics: {} 
+            };
             localHistoryUpdate[loginStr].push(existingWeekRecord);
           }
 
@@ -215,7 +235,6 @@ export default function BlueLockMA() {
         setMasterHistoryMap(localHistoryUpdate);
         setDiscoveredAgents(updatedAgentsList);
         
-        // 💾 Save current state configuration objects natively to disk arrays
         localStorage.setItem("bluelock_master_history", JSON.stringify(localHistoryUpdate));
         localStorage.setItem("bluelock_discovered_agents", JSON.stringify(updatedAgentsList));
 
@@ -223,7 +242,7 @@ export default function BlueLockMA() {
           setSelectedAgentLogin(updatedAgentsList[0].login);
         }
 
-        alert(`Ingested and locked tracking parameters into permanent local save for ${detectedWeek}!`);
+        alert(`Ingested dataset into local history archive mapping!`);
       } catch (err) {
         console.error(err);
       }
@@ -231,12 +250,55 @@ export default function BlueLockMA() {
     reader.readAsBinaryString(file);
   };
 
+  // ==========================================
+  // 📆 CALENDAR CALCULATION ENGINE
+  // ==========================================
+  const getFilteredAveragedMetrics = (agentLogin: string) => {
+    const rawRecords = masterHistoryMap[agentLogin] || [];
+    if (rawRecords.length === 0) return {};
+
+    // Filter array records matching custom date ranges inputs
+    const matchingTimeRecords = rawRecords.filter(rec => {
+      if (timeMacroView === "weekly") {
+        return rec.weekNumber >= startWeekSlider && rec.weekNumber <= endWeekSlider;
+      }
+      if (timeMacroView === "monthly") {
+        return selectedMonthFilter === "All" || rec.monthName === selectedMonthFilter;
+      }
+      if (timeMacroView === "quarterly") {
+        return selectedQuarterFilter === "All" || rec.quarterId === selectedQuarterFilter;
+      }
+      return true; // Yearly outputs everything
+    });
+
+    if (matchingTimeRecords.length === 0) return {};
+
+    // Average numerical scores across selected chronological scopes
+    const aggregatedSums: Record<string, number> = {};
+    const countMap: Record<string, number> = {};
+
+    matchingTimeRecords.forEach(rec => {
+      Object.entries(rec.metrics).forEach(([kpiId, val]) => {
+        if (typeof val === "number") {
+          aggregatedSums[kpiId] = (aggregatedSums[kpiId] || 0) + val;
+          countMap[kpiId] = (countMap[kpiId] || 0) + 1;
+        }
+      });
+    });
+
+    const finalAverages: Record<string, number | string> = {};
+    Object.keys(aggregatedSums).forEach(id => {
+      finalAverages[id] = aggregatedSums[id] / countMap[id];
+    });
+
+    return finalAverages;
+  };
+
   const toggleHexFavorite = (id: string) => {
     const activeFavoritesCount = kpiRegistry.filter(k => k.isHexFavorite).length;
     const targets = kpiRegistry.find(k => k.id === id);
-    
     if (targets && !targets.isHexFavorite && activeFavoritesCount >= 6) {
-      alert("The Ego Matrix Hexagon is locked to maximum 6 active favorite components. Unstar an old one first!");
+      alert("The Ego Matrix Hexagon is locked to maximum 6 active parameters.");
       return;
     }
     const updatedKpis = kpiRegistry.map(k => k.id === id ? { ...k, isHexFavorite: !k.isHexFavorite } : k);
@@ -245,7 +307,7 @@ export default function BlueLockMA() {
   };
 
   const currentAgentData = discoveredAgents.find(a => a.login === selectedAgentLogin);
-  const activeAgentHistory = selectedAgentLogin ? (masterHistoryMap[selectedAgentLogin] || []) : [];
+  const activeComputedMetrics = selectedAgentLogin ? getFilteredAveragedMetrics(selectedAgentLogin) : {};
   const runningHexKPIs = kpiRegistry.filter(k => k.isHexFavorite);
 
   const renderDynamicHexPoints = () => {
@@ -258,11 +320,8 @@ export default function BlueLockMA() {
       const kpi = runningHexKPIs[i];
       let performancePct = 0.75; 
       
-      if (kpi && currentAgentData) {
-        const records = masterHistoryMap[currentAgentData.login] || [];
-        const latest = records[records.length - 1];
-        const rawScore = latest ? latest.metrics[kpi.id] || latest.metrics[kpi.excelColumnKeyword] : null;
-        
+      if (kpi && activeComputedMetrics) {
+        const rawScore = activeComputedMetrics[kpi.id] || activeComputedMetrics[kpi.excelColumnKeyword];
         if (typeof rawScore === "number") {
           performancePct = rawScore < 1 ? rawScore : Math.min(rawScore / 100, 1);
         }
@@ -279,7 +338,7 @@ export default function BlueLockMA() {
   return (
     <div style={{ backgroundColor: theme.bg, color: theme.textLight, minHeight: "100vh", padding: "32px", fontFamily: "sans-serif" }}>
       
-      {/* HUB HEADER BAR COMPONENTS */}
+      {/* 👑 HUB NAVIGATION Hub Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `2px solid ${theme.border}`, paddingBottom: "20px", marginBottom: "32px" }}>
         <div>
           <h1 style={{ fontSize: "26px", fontWeight: "900", color: theme.accent, letterSpacing: "1.5px", margin: 0 }}>PROJECT: BLUELOCKMA</h1>
@@ -296,27 +355,78 @@ export default function BlueLockMA() {
           <input type="file" ref={fileInputRef} onChange={processUploadedExcelFiles} accept=".xlsx, .xls" style={{ display: "none" }} />
           
           <select value={selectedAgentLogin} onChange={(e) => setSelectedAgentLogin(e.target.value)} style={{ backgroundColor: theme.surface, color: theme.accent, border: `2px solid ${theme.accent}`, padding: "10px 16px", borderRadius: "6px", fontWeight: "bold" }}>
-            {discoveredAgents.length === 0 ? <option value="">-- Save File to Memory --</option> : discoveredAgents.map(a => <option key={a.login} value={a.login}>@{a.login}</option>)}
+            {discoveredAgents.length === 0 ? <option value="">-- Awaiting Ingest Files --</option> : discoveredAgents.map(a => <option key={a.login} value={a.login}>@{a.login}</option>)}
           </select>
         </div>
       </div>
 
       {/* ==========================================
-          🏟️ TAB 1: DASHBOARD
+          📅 CHRONOLOGICAL RANGE EXTRACTOR CALENDAR HUD
+         ========================================== */}
+      <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "12px", padding: "16px 24px", marginBottom: "32px", display: "flex", gap: "24px", alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          <label style={{ fontSize: "11px", color: theme.accent, fontWeight: "bold" }}>CALENDAR TIME HORIZON MAP</label>
+          <div style={{ display: "flex", backgroundColor: theme.bg, padding: "2px", borderRadius: "6px", border: `1px solid ${theme.border}` }}>
+            {(["weekly", "monthly", "quarterly", "yearly"] as const).map(mode => (
+              <button key={mode} onClick={() => setTimeMacroView(mode)} style={{ padding: "6px 12px", fontSize: "12px", textTransform: "capitalize", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", backgroundColor: timeMacroView === mode ? theme.accent : "transparent", color: timeMacroView === mode ? theme.bg : theme.textLight }}>{mode}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Dynamic Parameter Sliders for Variable Week Ranges */}
+        {timeMacroView === "weekly" && (
+          <div style={{ display: "flex", gap: "16px", flex: 1, alignItems: "center" }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
+              <span style={{ fontSize: "11px", color: theme.textMuted }}>START RUN TIME: <strong>Week {startWeekSlider}</strong></span>
+              <input type="range" min="1" max="53" value={startWeekSlider} onChange={e => setStartWeekSlider(parseInt(e.target.value))} style={{ accentColor: theme.accent, width: "100%" }} />
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
+              <span style={{ fontSize: "11px", color: theme.textMuted }}>END RUN TIME: <strong>Week {endWeekSlider}</strong></span>
+              <input type="range" min="1" max="53" value={endWeekSlider} onChange={e => setEndWeekSlider(Math.max(startWeekSlider, parseInt(e.target.value)))} style={{ accentColor: theme.accent, width: "100%" }} />
+            </div>
+          </div>
+        )}
+
+        {/* Month Dropdown Filters View Scope */}
+        {timeMacroView === "monthly" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <span style={{ fontSize: "11px", color: theme.textMuted }}>CHOOSE OPERATIONAL MONTH</span>
+            <select value={selectedMonthFilter} onChange={e => setSelectedMonthFilter(e.target.value)} style={{ padding: "8px", backgroundColor: theme.bg, color: "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", fontSize: "12px" }}>
+              <option value="All">All Active Calendar Months</option>
+              {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        )}
+
+        {/* Corporate Quarter Dynamic Dropdowns */}
+        {timeMacroView === "quarterly" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <span style={{ fontSize: "11px", color: theme.textMuted }}>CHOOSE HORIZON QUARTER</span>
+            <select value={selectedQuarterFilter} onChange={e => setSelectedQuarterFilter(e.target.value)} style={{ padding: "8px", backgroundColor: theme.bg, color: "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", fontSize: "12px" }}>
+              <option value="All">Full Business Quarter Layouts</option>
+              {["Q1", "Q2", "Q3", "Q4"].map(q => <option key={q} value={q}>{q}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* ==========================================
+          🏟️ TAB VIEW HUB CORE
          ========================================== */}
       {activeTab === "dashboard" && (
         <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: "32px" }}>
           
-          {/* PROFILE CARD & HEX */}
+          {/* PROFILE LAYOUT PILLARS */}
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             {!currentAgentData ? (
               <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "40px", textAlign: "center" }}>
                 <div style={{ fontSize: "50px" }}>💾</div>
-                <h3 style={{ color: theme.accent }}>PERMANENT AUTOSAVE STORAGE ACTIVE</h3>
-                <p style={{ fontSize: "12px", color: theme.textMuted }}>Your records stay on your hard drive. Drop spreadsheet files above to load up your last generation workspace view instantly.</p>
+                <h3 style={{ color: theme.accent }}>HARD-DRIVE VAULT ONLINE</h3>
+                <p style={{ fontSize: "12px", color: theme.textMuted }}>Ingest extraction spreadsheets to generate metrics maps automatically.</p>
               </div>
             ) : (
               <>
+                {/* REVOLUTION FIFA ULTIMATE RATING SHOWCASE DESIGN */}
                 <div style={{ background: "linear-gradient(135deg, #16223f 0%, #0d1527 100%)", border: `3px solid ${theme.accentGold}`, borderRadius: "20px", padding: "24px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <div><span style={{ fontSize: "44px", fontWeight: "900", color: theme.accentGold, display: "block" }}>{currentAgentData.overallRating}</span><span style={{ fontSize: "11px", fontWeight: "bold", color: theme.accent }}>STRIKER</span></div>
@@ -324,20 +434,19 @@ export default function BlueLockMA() {
                   </div>
                   <div style={{ textAlign: "center", margin: "16px 0" }}><span style={{ fontSize: "60px" }}>👤</span><h2 style={{ fontSize: "22px", color: theme.accentGold, margin: "6px 0" }}>{currentAgentData.login.toUpperCase()}</h2></div>
                   
+                  {/* Aggregated Output matching active calendar filters configurations */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", borderTop: `1px solid ${theme.border}`, paddingTop: "12px", fontSize: "11px" }}>
                     {kpiRegistry.filter(k => k.isHexFavorite).slice(0, 6).map(kpi => {
-                      const records = masterHistoryMap[currentAgentData.login] || [];
-                      const latestWeek = records[records.length - 1];
-                      const val = latestWeek ? latestWeek.metrics[kpi.id] || latestWeek.metrics[kpi.excelColumnKeyword] : "—";
+                      const val = activeComputedMetrics[kpi.id] || activeComputedMetrics[kpi.excelColumnKeyword] || "—";
                       const fmt = typeof val === "number" ? (val < 1 ? `${(val * 100).toFixed(0)}%` : val.toFixed(1)) : val;
                       return <div key={kpi.id}><strong>{fmt}</strong> <span style={{ color: theme.textMuted, display: "block" }}>{kpi.displayName}</span></div>;
                     })}
                   </div>
                 </div>
 
+                {/* ⬡ THE REAL-TIME GRADED MATRIX HEXAGON (0-100) */}
                 <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "20px", textAlign: "center" }}>
-                  <h4 style={{ color: theme.accent, margin: "0 0 4px 0", fontSize: "13px", textAlign: "left" }}>⬡ EGO MATRIX FAVORITES (0-100)</h4>
-                  
+                  <h4 style={{ color: theme.accent, margin: "0 0 4px 0", fontSize: "13px", textAlign: "left" }}>⬡ EGO RADAR PERFORMANCE CORES</h4>
                   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", position: "relative" }}>
                     <svg width="220" height="220" viewBox="0 0 200 200">
                       <polygon points="100,25 175,68 175,153 100,195 25,153 25,68" fill="none" stroke={theme.border} strokeWidth="1" />
@@ -348,11 +457,7 @@ export default function BlueLockMA() {
                         const labelRadius = 88;
                         const lx = 100 + labelRadius * Math.cos(angle);
                         const ly = 100 + labelRadius * Math.sin(angle);
-                        return (
-                          <text key={kpi.id} x={lx} y={ly} fill={theme.textLight} fontSize="9" fontWeight="bold" textAnchor="middle" alignmentBaseline="middle">
-                            {kpi.displayName.slice(0, 8)}
-                          </text>
-                        );
+                        return <text key={kpi.id} x={lx} y={ly} fill={theme.textLight} fontSize="9" fontWeight="bold" textAnchor="middle" alignmentBaseline="middle">{kpi.displayName.slice(0, 8)}</text>;
                       })}
                     </svg>
                   </div>
@@ -361,11 +466,11 @@ export default function BlueLockMA() {
             )}
           </div>
 
-          {/* MATRIX GRID UNIFIED TABLE */}
+          {/* DYNAMIC INTEGRATED GRID MATRIX TABLE */}
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "24px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
-                <div><h3 style={{ margin: 0, color: theme.accent }}>📊 Unified Operational Matrix Grid</h3></div>
+                <div><h3 style={{ margin: 0, color: theme.accent }}>📊 Unified Balanced Matrix Records</h3></div>
                 <div style={{ display: "flex", gap: "6px" }}>
                   {["All", "Productivity", "Quality", "Compliance"].map(cat => (
                     <button key={cat} onClick={() => setSelectedCategoryFilter(cat)} style={{ padding: "6px 12px", backgroundColor: selectedCategoryFilter === cat ? theme.accent : theme.bg, color: selectedCategoryFilter === cat ? theme.bg : "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", fontSize: "12px" }}>{cat}</button>
@@ -373,7 +478,7 @@ export default function BlueLockMA() {
                 </div>
               </div>
 
-              {discoveredAgents.length === 0 ? <p style={{ color: theme.textMuted, textAlign: "center", padding: "40px" }}>Awaiting local memory cache stream loading index...</p> : (
+              {discoveredAgents.length === 0 ? <p style={{ color: theme.textMuted, textAlign: "center", padding: "40px" }}>Awaiting localized file mapping integration streams...</p> : (
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
                     <thead>
@@ -385,18 +490,19 @@ export default function BlueLockMA() {
                       </tr>
                     </thead>
                     <tbody>
-                      {discoveredAgents.map((ag, idx) => (
-                        <tr key={ag.login} style={{ backgroundColor: idx % 2 === 0 ? theme.surface : theme.bg, borderBottom: `1px solid ${theme.border}` }}>
-                          <td style={{ padding: "10px", color: theme.accent, fontWeight: "bold" }}>@{ag.login}</td>
-                          {kpiRegistry.filter(k => selectedCategoryFilter === "All" || k.category === selectedCategoryFilter).map(kpi => {
-                            const recs = masterHistoryMap[ag.login] || [];
-                            const latestWeek = recs[recs.length - 1];
-                            const raw = latestWeek ? latestWeek.metrics[kpi.id] || latestWeek.metrics[kpi.excelColumnKeyword] : "—";
-                            const fmt = typeof raw === "number" ? (raw < 1 ? `${(raw * 100).toFixed(2)}%` : raw.toFixed(2)) : "—";
-                            return <td key={kpi.id} style={{ padding: "10px", textAlign: "center" }}>{fmt}</td>;
-                          })}
-                        </tr>
-                      ))}
+                      {discoveredAgents.map((ag, idx) => {
+                        const calculatedRowMetrics = getFilteredAveragedMetrics(ag.login);
+                        return (
+                          <tr key={ag.login} style={{ backgroundColor: idx % 2 === 0 ? theme.surface : theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                            <td style={{ padding: "10px", color: theme.accent, fontWeight: "bold" }}>@{ag.login}</td>
+                            {kpiRegistry.filter(k => selectedCategoryFilter === "All" || k.category === selectedCategoryFilter).map(kpi => {
+                              const raw = calculatedRowMetrics[kpi.id] || calculatedRowMetrics[kpi.excelColumnKeyword] || "—";
+                              const fmt = typeof raw === "number" ? (raw < 1 ? `${(raw * 100).toFixed(2)}%` : raw.toFixed(2)) : "—";
+                              return <td key={kpi.id} style={{ padding: "10px", textAlign: "center" }}>{fmt}</td>;
+                            })}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -406,27 +512,68 @@ export default function BlueLockMA() {
         </div>
       )}
 
-      {/* PARAMETERS PANEL & ACTION PLANS TABS STAY IDENTICAL BELOW */}
+      {/* ==========================================
+          ⚙️ TAB 2: PARAMETERS MANAGEMENT PANEL WITH DRIVE HARDENING SAVES
+         ========================================== */}
       {activeTab === "parameters" && (
         <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "32px" }}>
-          <h3 style={{ color: theme.accent, marginTop: 0 }}>⚙️ Parameter Control Base</h3>
+          <h3 style={{ color: theme.accent, marginTop: 0 }}>⚙️ Systems Parameter Settings Panel</h3>
+          <p style={{ fontSize: "13px", color: theme.textMuted, marginBottom: "24px" }}>Click the **★ Star icon** to link choices to the Radar Chart. Changes automatically autosave onto your machine hard drive partition.</p>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "32px" }}>
             {kpiRegistry.map(k => (
               <div key={k.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: theme.bg, border: `1px solid ${theme.border}`, padding: "12px 16px", borderRadius: "8px" }}>
-                <div><strong>{k.displayName}</strong><span style={{ color: theme.textMuted, fontSize: "11px", display: "block" }}>{k.excelColumnKeyword}</span></div>
-                <div style={{ display: "flex", gap: "12px" }}>
+                <div><strong>{k.displayName}</strong><span style={{ color: theme.textMuted, fontSize: "11px", display: "block" }}>Header Keyword Reference: {k.excelColumnKeyword}</span></div>
+                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
                   <button onClick={() => toggleHexFavorite(k.id)} style={{ background: "none", border: "none", color: k.isHexFavorite ? theme.accentGold : theme.textMuted, fontSize: "18px", cursor: "pointer" }}>{k.isHexFavorite ? "★" : "☆"}</button>
-                  <button onClick={() => setKpiRegistry(kpiRegistry.filter(item => item.id !== k.id))} style={{ background: "none", border: "none", color: theme.danger, fontWeight: "bold", cursor: "pointer" }}>✕</button>
+                  <button onClick={() => {
+                    const filteredKpis = kpiRegistry.filter(item => item.id !== k.id);
+                    setKpiRegistry(filteredKpis);
+                    localStorage.setItem("bluelock_kpi_registry", JSON.stringify(filteredKpis));
+                  }} style={{ background: "none", border: "none", color: theme.danger, fontWeight: "bold", cursor: "pointer" }}>✕</button>
                 </div>
               </div>
             ))}
           </div>
+
+          <h4 style={{ color: theme.accentGold, marginBottom: "12px" }}>＋ Map and Ingest New Column Metric Option</h4>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!newKpiName || !selectedHeaderFromDropdown) return;
+            const updatedRegistry = [...kpiRegistry, { id: `custom_${Date.now()}`, displayName: newKpiName, excelColumnKeyword: selectedHeaderFromDropdown, category: newKpiCat, isHexFavorite: false }];
+            setKpiRegistry(updatedRegistry);
+            localStorage.setItem("bluelock_kpi_registry", JSON.stringify(updatedRegistry));
+            setNewKpiName("");
+          }} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "16px", alignItems: "end", backgroundColor: theme.bg, padding: "20px", borderRadius: "8px", border: `1px solid ${theme.border}` }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", color: theme.accent }}>Custom Dashboard Label</label>
+              <input type="text" placeholder="e.g. CSAT Score %" value={newKpiName} onChange={e => setNewKpiName(e.target.value)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", color: theme.accent }}>Detected Column from File Streams</label>
+              <select value={selectedHeaderFromDropdown} onChange={e => setSelectedHeaderFromDropdown(e.target.value)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }}>
+                {allDetectedHeaders.length === 0 ? <option>-- Upload Excel to populate variables --</option> : allDetectedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", color: theme.accent }}>Category Core Pillar</label>
+              <select value={newKpiCat} onChange={e => setNewKpiCat(e.target.value as any)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }}>
+                <option value="Productivity">Productivity</option>
+                <option value="Quality">Quality</option>
+                <option value="Compliance">Compliance</option>
+              </select>
+            </div>
+            <button type="submit" style={{ backgroundColor: theme.accent, color: theme.bg, padding: "12px 24px", border: "none", borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>Inject Option</button>
+          </form>
         </div>
       )}
 
+      {/* ==========================================
+          ⚔️ TAB 3: MILESTONES & HISTORY LEDGER PANEL
+         ========================================== */}
       {activeTab === "actionPlan" && (
         <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "32px" }}>
-          <h2 style={{ color: theme.accentGold, margin: 0 }}>⚔️ 6-Week Action Roadmap</h2>
+          <h2 style={{ color: theme.accentGold, margin: 0 }}>⚔️ 6-Week Action Calibration Roadmap</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginTop: "24px" }}>
             {milestones.map((m, idx) => (
               <div key={idx} style={{ backgroundColor: theme.bg, border: `1px solid ${theme.border}`, padding: "24px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -434,6 +581,26 @@ export default function BlueLockMA() {
                 <button onClick={() => setMilestones(milestones.map((item, i) => i === idx ? { ...item, completed: !item.completed } : item))} style={{ padding: "8px 16px", backgroundColor: m.completed ? theme.success : "transparent", color: m.completed ? theme.bg : theme.accentGold, border: `1px solid ${m.completed ? theme.success : theme.accentGold}`, borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>{m.completed ? "✓ Stage Unlocked" : "⬡ Awaken Stage"}</button>
               </div>
             ))}
+          </div>
+
+          <div style={{ marginTop: "40px", paddingTop: "24px", borderTop: `1px solid ${theme.border}` }}>
+            <h3 style={{ color: theme.accent }}>📜 Local Extracted Time Segments History Ledger</h3>
+            {!selectedAgentLogin ? <p style={{ color: theme.textMuted }}>Choose an active handle above to map timelines.</p> : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginTop: "16px" }}>
+                {(masterHistoryMap[selectedAgentLogin] || []).map((run, idx) => (
+                  <div key={idx} style={{ backgroundColor: theme.bg, padding: "20px", borderRadius: "8px", border: `1px solid ${theme.border}`, borderLeft: `4px solid ${theme.accent}` }}>
+                    <h4 style={{ margin: "0 0 10px 0", color: theme.accentGold }}>{run.weekId} Run Upload Dataset Mappings</h4>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "12px" }}>
+                      {kpiRegistry.map(kpi => {
+                        const val = run.metrics[kpi.id] || run.metrics[kpi.excelColumnKeyword] || "—";
+                        const formatted = typeof val === "number" ? (val < 1 ? `${(val * 100).toFixed(1)}%` : val.toFixed(1)) : val;
+                        return <div key={kpi.id} style={{ color: theme.textMuted }}>{kpi.displayName}: <span style={{ color: theme.textLight, fontWeight: "bold" }}>{formatted}</span></div>;
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

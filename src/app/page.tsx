@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 
 // ==========================================
-// 🗂️ STRUCTURE TYPE BLUEPRINTS
+// 🗂️ CORE INTERFACES
 // ==========================================
 interface KPIMapping {
   id: string;
@@ -18,7 +18,7 @@ interface DynamicAgent {
   overallRating: number;
 }
 
-interface HistoricalData {
+interface HistoricalWeekRecord {
   weekId: string;
   metrics: Record<string, number | string>;
 }
@@ -39,33 +39,42 @@ const theme = {
 export default function BlueLockMA() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // App Engines State
-  const [selectedAgentLogin, setSelectedAgentLogin] = useState<string | null>(null);
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All");
+  // Navigation State Tab Engine
+  const [activeTab, setActiveTab] = useState<"dashboard" | "parameters" | "actionPlan">("dashboard");
   
-  // Extracted Data Holders
+  // Selections
+  const [selectedAgentLogin, setSelectedAgentLogin] = useState<string>("");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All");
+
+  // Localized History Storage Aggregator
+  const [masterHistoryMap, setMasterHistoryMap] = useState<Record<string, HistoricalWeekRecord[]>>({});
   const [discoveredAgents, setDiscoveredAgents] = useState<DynamicAgent[]>([]);
-  const [parsedDataRows, setParsedDataRows] = useState<any[][]>([]);
-  const [headerKeywordsRow, setHeaderKeywordsRow] = useState<string[]>([]);
-  const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
   const [allDetectedHeaders, setAllDetectedHeaders] = useState<string[]>([]);
   const [selectedHeaderFromDropdown, setSelectedHeaderFromDropdown] = useState<string>("");
 
   // Parameter Control State Core
   const [kpiRegistry, setKpiRegistry] = useState<KPIMapping[]>([
+    { id: "ccx_t2b", displayName: "CCX Top 2 Box", excelColumnKeyword: "CCX-Overall Top-Two Box %", category: "Quality" },
     { id: "missed_overall", displayName: "Overall Missed Rate", excelColumnKeyword: "Overall Missed Contact Rate", category: "Productivity" },
-    { id: "missed_phone", displayName: "Phone Missed Rate", excelColumnKeyword: "Phone Missed Contact Rate", category: "Productivity" },
-    { id: "missed_chat", displayName: "Chat Missed Rate", excelColumnKeyword: "Chat Missed Contact Rate", category: "Productivity" },
-    { id: "ring_time", displayName: "Ring Time (Min)", excelColumnKeyword: "Ring Time (Min)", category: "Productivity" }
+    { id: "aht_min", displayName: "AHT (Min)", excelColumnKeyword: "AHT (Min)", category: "Productivity" },
+    { id: "adherence", displayName: "Adherence", excelColumnKeyword: "Adherence %", category: "Productivity" },
+    { id: "transfer_rate", displayName: "Transfer Rate", excelColumnKeyword: "Transfer Rate", category: "Compliance" }
   ]);
 
   const [newKpiName, setNewKpiName] = useState("");
   const [newKpiCat, setNewKpiCat] = useState<"Quality" | "Productivity" | "Compliance">("Productivity");
 
+  // Milestone Action Plan Checklist State
+  const [milestones, setMilestones] = useState([
+    { week: "Weeks 1–2", title: "Deconstruction & Target Framing", completed: true, desc: "Isolate precise root-causes and baseline current metrics." },
+    { week: "Weeks 3–4", title: "Analytical Blueprint Emulation", completed: false, desc: "Perform side-by-side active sessions and calibrate handling procedures." },
+    { week: "Weeks 5–6", title: "Ego Weapon Awakening", completed: false, desc: "Stabilize threshold autonomy and secure the target metrics." }
+  ]);
+
   // ==========================================
-  // 📥 AUTO-ADAPTIVE INGESTION PIPELINE
+  // 📥 ROBUST SCANNING INGESTION PIPELINE
   // ==========================================
-  const handleExcelUploadStream = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const processUploadedExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -75,274 +84,320 @@ export default function BlueLockMA() {
         const dataBinary = evt.target?.result;
         const workbook = XLSX.read(dataBinary, { type: "binary" });
         const targetSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const parsedRows = XLSX.utils.sheet_to_json<any[]>(targetSheet, { header: 1 });
+        const rawRows = XLSX.utils.sheet_to_json<any[]>(targetSheet, { header: 1 });
 
-        if (!parsedRows || parsedRows.length < 5) return;
+        if (!rawRows || rawRows.length === 0) return;
 
-        // Auto-detect layout maps
-        const subKpiHeaders = (parsedRows[4] || []).map((h: any) => String(h || "").trim()).filter(Boolean);
-        const weeksRow = (parsedRows[3] || []).map((w: any) => String(w || "").trim());
+        // Step 1: Scan layout to locate the main header index row dynamically
+        let headerRowIdx = 0;
+        let detectedWeek = "Week 25"; // Fallback identifier
 
-        setHeaderKeywordsRow((parsedRows[4] || []).map((h: any) => String(h || "").trim()));
-        setParsedDataRows(parsedRows);
+        for (let r = 0; r < Math.min(rawRows.length, 10); r++) {
+          const rowStr = (rawRows[r] || []).map(c => String(c || "").toLowerCase().trim());
+          if (rowStr.includes("agent") || rowStr.includes("site group-channel") || rowStr.includes("marketplace (w/ week)") || rowStr.includes("site group-contact type data")) {
+            headerRowIdx = r;
+            break;
+          }
+        }
 
-        // Populate the dynamic KPI dropdown with unique column headers found at the top
-        const uniqueHeaders = Array.from(new Set(subKpiHeaders)).filter(h => h.toLowerCase() !== "agent");
-        setAllDetectedHeaders(uniqueHeaders);
-        if (uniqueHeaders.length > 0) setSelectedHeaderFromDropdown(uniqueHeaders[0]);
-
-        // Discovered Unique Weeks for History Pipeline
-        const uniqueWeeks = Array.from(new Set(weeksRow.filter(w => w && w.toLowerCase().includes("week"))));
-        setAvailableWeeks(uniqueWeeks);
-
-        // Auto-extract ALL unique agents found in row 5 downward
-        const agentList: DynamicAgent[] = [];
-        parsedRows.slice(5).forEach((row) => {
-          if (row && row[0] && String(row[0]).trim() !== "" && String(row[0]).toLowerCase() !== "agent" && String(row[0]).toLowerCase() !== "total") {
-            const loginStr = String(row[0]).trim();
-            if (!agentList.some(a => a.login === loginStr)) {
-              agentList.push({ login: loginStr, overallRating: Math.floor(Math.random() * (95 - 78 + 1)) + 78 });
+        // Search for week strings in nearby rows
+        for (let r = 0; r < Math.min(rawRows.length, 8); r++) {
+          const rowCells = rawRows[r] || [];
+          for (let c = 0; c < rowCells.length; c++) {
+            const txt = String(rowCells[c]).trim();
+            if (txt.toLowerCase().includes("week") || txt === "25" || txt === "24") {
+              detectedWeek = txt.toLowerCase().includes("week") ? txt : `Week ${txt}`;
+              break;
             }
+          }
+        }
+
+        const headers = (rawRows[headerRowIdx] || []).map((h: any) => String(h || "").trim());
+        
+        // Populate KPI dropdown options dynamically based on text found
+        const filteredHeaders = headers.filter(h => h && h.toLowerCase() !== "agent" && !h.toLowerCase().includes("week") && h.length > 2);
+        if (filteredHeaders.length > 0) {
+          setAllDetectedHeaders(prev => Array.from(new Set([...prev, ...filteredHeaders])));
+          setSelectedHeaderFromDropdown(filteredHeaders[0]);
+        }
+
+        // Step 2: Extract real active records downward
+        const localHistoryUpdate = { ...masterHistoryMap };
+        const updatedAgentsList = [...discoveredAgents];
+
+        rawRows.slice(headerRowIdx + 1).forEach((row) => {
+          if (!row || !row[0] || String(row[0]).trim() === "" || String(row[0]).toLowerCase().includes("total") || String(row[0]).toLowerCase() === "agent") return;
+
+          const loginStr = String(row[0]).trim();
+          
+          // Build out matching metric definitions mappings
+          const metricsPayload: Record<string, number | string> = {};
+          headers.forEach((h, index) => {
+            if (!h) return;
+            // Map cells data to existing or pending parameter keywords
+            const associatedKpi = kpiRegistry.find(k => k.excelColumnKeyword.toLowerCase() === h.toLowerCase());
+            if (associatedKpi) {
+              metricsPayload[associatedKpi.id] = row[index] !== undefined ? row[index] : "—";
+            } else {
+              metricsPayload[h] = row[index] !== undefined ? row[index] : "—";
+            }
+          });
+
+          // Retain inside local memory mapping layers
+          if (!localHistoryUpdate[loginStr]) localHistoryUpdate[loginStr] = [];
+          
+          // Drop existing if rewriting same timeframe run period
+          localHistoryUpdate[loginStr] = localHistoryUpdate[loginStr].filter(record => record.weekId !== detectedWeek);
+          localHistoryUpdate[loginStr].push({ weekId: detectedWeek, metrics: metricsPayload });
+
+          if (!updatedAgentsList.some(a => a.login === loginStr)) {
+            updatedAgentsList.push({ login: loginStr, overallRating: Math.floor(Math.random() * (96 - 80 + 1)) + 80 });
           }
         });
 
-        setDiscoveredAgents(agentList);
-        if (agentList.length > 0) setSelectedAgentLogin(agentList[0].login);
+        setMasterHistoryMap(localHistoryUpdate);
+        setDiscoveredAgents(updatedAgentsList);
+        
+        if (updatedAgentsList.length > 0 && !selectedAgentLogin) {
+          setSelectedAgentLogin(updatedAgentsList[0].login);
+        }
 
+        alert(`Successfully ingested data metrics tracking run into local history for ${detectedWeek}!`);
       } catch (err) {
-        console.error(err);
+        alert("Parsing configuration error.");
       }
     };
     reader.readAsBinaryString(file);
   };
 
-  const pullLiveCellData = (agentLogin: string, columnKeyword: string) => {
-    if (!parsedDataRows || parsedDataRows.length === 0 || headerKeywordsRow.length === 0) return null;
-    
-    const targetIdx = headerKeywordsRow.findIndex(h => h.toLowerCase() === columnKeyword.toLowerCase().trim());
-    if (targetIdx === -1) return null;
-
-    const matchedRow = parsedDataRows.find(r => r && r[0] && String(r[0]).trim().toLowerCase() === agentLogin.toLowerCase());
-    return matchedRow ? matchedRow[targetIdx] : null;
-  };
-
-  const compileAgentHistory = (agentLogin: string): HistoricalData[] => {
-    if (!parsedDataRows || parsedDataRows.length === 0 || availableWeeks.length === 0) return [];
-    const weeksRow = parsedDataRows[3];
-    const subKpiRow = parsedDataRows[4];
-    const matchedRow = parsedDataRows.find(r => r && r[0] && String(r[0]).trim().toLowerCase() === agentLogin.toLowerCase());
-
-    if (!matchedRow) return [];
-
-    return availableWeeks.map(week => {
-      const metricsMap: Record<string, number | string> = {};
-      kpiRegistry.forEach(kpi => {
-        let cellsIndex = -1;
-        for (let i = 0; i < matchedRow.length; i++) {
-          if (String(weeksRow[i]).trim() === week && String(subKpiRow[i]).trim().toLowerCase() === kpi.excelColumnKeyword.toLowerCase()) {
-            cellsIndex = i;
-            break;
-          }
-        }
-        metricsMap[kpi.id] = cellsIndex !== -1 ? matchedRow[cellsIndex] : "—";
-      });
-      return { weekId: week, metrics: metricsMap };
-    });
-  };
-
   const currentAgentData = discoveredAgents.find(a => a.login === selectedAgentLogin);
-  const activeHistoryTimeline = selectedAgentLogin ? compileAgentHistory(selectedAgentLogin) : [];
+  const activeAgentHistory = selectedAgentLogin ? (masterHistoryMap[selectedAgentLogin] || []) : [];
 
   return (
     <div style={{ backgroundColor: theme.bg, color: theme.textLight, minHeight: "100vh", padding: "32px", fontFamily: "sans-serif" }}>
       
-      {/* 👑 HEAD BAR SECTION */}
+      {/* 👑 HEADER BLOCK NAVIGATION HUB */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `2px solid ${theme.border}`, paddingBottom: "20px", marginBottom: "32px" }}>
         <div>
           <h1 style={{ fontSize: "26px", fontWeight: "900", color: theme.accent, letterSpacing: "1.5px", margin: 0 }}>PROJECT: BLUELOCKMA</h1>
-          <p style={{ fontSize: "12px", color: theme.textMuted, marginTop: "4px" }}>CORE DYNAMIC ADAPTIVE EXTRACTION MATRIX</p>
+          <div style={{ display: "flex", gap: "16px", marginTop: "12px" }}>
+            <button onClick={() => setActiveTab("dashboard")} style={{ padding: "8px 16px", backgroundColor: activeTab === "dashboard" ? theme.accent : "transparent", color: activeTab === "dashboard" ? theme.bg : "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>🏟️ Live Dashboard</button>
+            <button onClick={() => setActiveTab("parameters")} style={{ padding: "8px 16px", backgroundColor: activeTab === "parameters" ? theme.accent : "transparent", color: activeTab === "parameters" ? theme.bg : "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>⚙️ Settings Parameter Panel</button>
+            <button onClick={() => setActiveTab("actionPlan")} style={{ padding: "8px 16px", backgroundColor: activeTab === "actionPlan" ? theme.accent : "transparent", color: activeTab === "actionPlan" ? theme.bg : "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>⚔️ 6-Week Awakening Plan</button>
+          </div>
         </div>
+        
         <div style={{ display: "flex", gap: "12px" }}>
           <button onClick={() => fileInputRef.current?.click()} style={{ backgroundColor: theme.surfaceLight, color: theme.accent, border: `1px solid ${theme.border}`, padding: "10px 16px", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}>📥 Ingest Master File</button>
-          <input type="file" ref={fileInputRef} onChange={handleExcelUploadStream} accept=".xlsx, .xls" style={{ display: "none" }} />
+          <input type="file" ref={fileInputRef} onChange={processUploadedExcel} accept=".xlsx, .xls" style={{ display: "none" }} />
           
-          <select value={selectedAgentLogin || ""} onChange={(e) => setSelectedAgentLogin(e.target.value || null)} style={{ backgroundColor: theme.surface, color: theme.accent, border: `2px solid ${theme.accent}`, padding: "10px 16px", borderRadius: "6px", fontWeight: "bold" }}>
-            {discoveredAgents.length === 0 ? <option>-- Awaiting File Ingestion --</option> : discoveredAgents.map(a => <option key={a.login} value={a.login}>@{a.login} [EGOIST]</option>)}
+          <select value={selectedAgentLogin} onChange={(e) => setSelectedAgentLogin(e.target.value)} style={{ backgroundColor: theme.surface, color: theme.accent, border: `2px solid ${theme.accent}`, padding: "10px 16px", borderRadius: "6px", fontWeight: "bold" }}>
+            {discoveredAgents.length === 0 ? <option value="">-- Ingest File to Load Egoists --</option> : discoveredAgents.map(a => <option key={a.login} value={a.login}>@{a.login}</option>)}
           </select>
         </div>
       </div>
 
       {/* ==========================================
-          🧱 LAYOUT CORE
+          🏟️ TAB VIEW AREA 1: LIVE DASHBOARD VIEW
          ========================================== */}
-      <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: "32px" }}>
-        
-        {/* LEFT COMPONENT COLUMN (DYNAMIC FUT SHOWCASE + HEXAGON DISPLAY BELOW) */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {!currentAgentData ? (
-            <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "40px", textAlign: "center" }}>
-              <div style={{ fontSize: "60px", marginBottom: "16px" }}>⚽</div>
-              <h3 style={{ fontSize: "16px", color: theme.accent, margin: 0 }}>ROSTER ENGINE STANDBY</h3>
-              <p style={{ fontSize: "12px", color: theme.textMuted, marginTop: "8px" }}>Upload data parameters worksheet to map live profiles.</p>
-            </div>
-          ) : (
-            <>
-              {/* ADAPTIVE FIFA FUT STAT CARD */}
-              <div style={{ background: "linear-gradient(135deg, #16223f 0%, #0d1527 100%)", border: `3px solid ${theme.accentGold}`, borderRadius: "20px", padding: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div><span style={{ fontSize: "46px", fontWeight: "900", color: theme.accentGold, display: "block" }}>{currentAgentData.overallRating}</span><span style={{ fontSize: "12px", fontWeight: "bold", color: theme.accent }}>STRIKER</span></div>
-                  <span style={{ fontSize: "14px", fontWeight: "bold" }}>🇲🇦 MA</span>
-                </div>
-                <div style={{ textAlign: "center", margin: "20px 0" }}><span style={{ fontSize: "64px" }}>👤</span><h2 style={{ fontSize: "24px", margin: "8px 0", color: theme.accentGold }}>{currentAgentData.login.toUpperCase()}</h2></div>
-                
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", borderTop: `1px solid ${theme.border}`, paddingTop: "14px", fontSize: "13px" }}>
-                  {kpiRegistry.slice(0, 6).map(kpi => {
-                    const cellVal = pullLiveCellData(currentAgentData.login, kpi.excelColumnKeyword);
-                    const formatted = typeof cellVal === "number" ? (cellVal < 1 ? `${(cellVal * 100).toFixed(0)}%` : cellVal.toFixed(1)) : "—";
-                    return <div key={kpi.id} style={{ fontWeight: "bold" }}>{formatted} <span style={{ color: theme.textMuted, fontSize: "11px", display: "block" }}>{kpi.displayName.toUpperCase()}</span></div>;
-                  })}
-                </div>
+      {activeTab === "dashboard" && (
+        <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: "32px" }}>
+          
+          {/* PROFILE LEFT CORES */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            {!currentAgentData ? (
+              <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "40px", textAlign: "center" }}>
+                <div style={{ fontSize: "50px" }}>👤</div>
+                <h3 style={{ color: theme.accent }}>NO EGOIST SELECTED</h3>
+                <p style={{ fontSize: "12px", color: theme.textMuted }}>Ingest your data extraction file sheets at the top to fill this matrix container block.</p>
               </div>
+            ) : (
+              <>
+                {/* REVOLUTION FUT CARD RENDERING DESIGN */}
+                <div style={{ background: "linear-gradient(135deg, #16223f 0%, #0d1527 100%)", border: `3px solid ${theme.accentGold}`, borderRadius: "20px", padding: "24px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <div><span style={{ fontSize: "44px", fontWeight: "900", color: theme.accentGold, display: "block" }}>{currentAgentData.overallRating}</span><span style={{ fontSize: "11px", fontWeight: "bold", color: theme.accent }}>STRIKER</span></div>
+                    <span style={{ fontSize: "13px" }}>🇲🇦 EGOIST</span>
+                  </div>
+                  <div style={{ textAlign: "center", margin: "16px 0" }}><span style={{ fontSize: "60px" }}>👤</span><h2 style={{ fontSize: "22px", color: theme.accentGold, margin: "6px 0" }}>{currentAgentData.login.toUpperCase()}</h2></div>
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", borderTop: `1px solid ${theme.border}`, paddingTop: "12px", fontSize: "12px" }}>
+                    {kpiRegistry.slice(0, 6).map(kpi => {
+                      const latRecord = activeAgentHistory[activeAgentHistory.length - 1];
+                      const val = latRecord ? latRecord.metrics[kpi.id] || latRecord.metrics[kpi.excelColumnKeyword] : "—";
+                      const fmt = typeof val === "number" ? (val < 1 ? `${(val * 100).toFixed(0)}%` : val.toFixed(1)) : val;
+                      return <div key={kpi.id}><strong>{fmt}</strong> <span style={{ color: theme.textMuted, fontSize: "11px", display: "block" }}>{kpi.displayName}</span></div>;
+                    })}
+                  </div>
+                </div>
 
-              {/* ⬡ HEXAGON VISIBLE DIRECTLY UNDER THE CARD */}
-              <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "20px", textAlign: "center" }}>
-                <h4 style={{ color: theme.accent, margin: "0 0 12px 0", fontSize: "14px", textAlign: "left" }}>⬡ EGOIST MATRIX HEXAGON</h4>
-                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "10px 0" }}>
-                  <svg width="180" height="180" viewBox="0 0 200 200">
+                {/* ⬡ INSTANT STRUCTURAL RADAR MATRIX */}
+                <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "20px", textAlign: "center" }}>
+                  <h4 style={{ color: theme.accent, margin: "0 0 12px 0", fontSize: "13px", textAlign: "left" }}>⬡ EGOIST RADAR SPECTRUM</h4>
+                  <svg width="150" height="150" viewBox="0 0 200 200" style={{ margin: "0 auto" }}>
                     <polygon points="100,20 180,65 180,145 100,190 20,145 20,65" fill="none" stroke={theme.border} strokeWidth="2" />
-                    <polygon points="100,50 160,80 155,130 100,165 45,135 40,80" fill="rgba(0, 240, 255, 0.25)" stroke={theme.accent} strokeWidth="2.5" />
+                    <polygon points="100,45 160,75 150,130 100,165 50,135 45,75" fill="rgba(0, 240, 255, 0.2)" stroke={theme.accent} strokeWidth="2" />
                   </svg>
                 </div>
-              </div>
-
-              {/* TIMELINE HISTORICAL TRACKING BLOCK */}
-              <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "20px" }}>
-                <h4 style={{ color: theme.accent, margin: "0 0 12px 0", fontSize: "14px" }}>📈 Chronological Timeline Metrics</h4>
-                {activeHistoryTimeline.length === 0 ? <p style={{ fontSize: "12px", color: theme.textMuted }}>No metric runs tracked.</p> : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    {activeHistoryTimeline.map(h => (
-                      <div key={h.weekId} style={{ backgroundColor: theme.bg, padding: "10px", borderRadius: "6px", borderLeft: `3px solid ${theme.accentGold}` }}>
-                        <div style={{ fontSize: "12px", fontWeight: "bold", color: theme.accent }}>{h.weekId} Run</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "6px", fontSize: "11px" }}>
-                          {Object.entries(h.metrics).map(([kId, val]) => {
-                            const lbl = kpiRegistry.find(k => k.id === kId)?.displayName || kId;
-                            const fmt = typeof val === "number" ? (val < 1 ? `${(val * 100).toFixed(1)}%` : val.toFixed(1)) : val;
-                            return <div key={kId} style={{ color: theme.textLight }}>{lbl}: <span style={{ color: theme.accentGold }}>{fmt}</span></div>;
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* RIGHT COMPONENT COLUMN (SETTINGS CONTROLS PANEL & FILTERS) */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
-          
-          {/* PARAMETER CONTROL SETTINGS ENGINE PANEL */}
-          <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "24px" }}>
-            <h3 style={{ color: theme.accent, margin: "0 0 8px 0", fontSize: "18px" }}>⚙️ bluelockMA Parameters Panel</h3>
-            <p style={{ fontSize: "12px", color: theme.textMuted, marginBottom: "16px" }}>The file columns are auto-detected below. Choose a KPI from the dropdown menu to integrate it into your workspace view.</p>
-
-            {/* Active Param Badges Portfolio */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "20px" }}>
-              {kpiRegistry.map(kpi => (
-                <div key={kpi.id} style={{ display: "flex", alignItems: "center", gap: "8px", backgroundColor: theme.bg, border: `1px solid ${theme.border}`, padding: "6px 12px", borderRadius: "6px", fontSize: "12px" }}>
-                  <span style={{ color: theme.accentGold }}>●</span>
-                  <span><strong>{kpi.displayName}</strong> ({kpi.excelColumnKeyword})</span>
-                  <button onClick={() => setKpiRegistry(kpiRegistry.filter(k => k.id !== kpi.id))} style={{ background: "none", border: "none", color: theme.danger, cursor: "pointer", fontWeight: "bold" }}>✕</button>
-                </div>
-              ))}
-            </div>
-
-            {/* Ingested Dropdown Selector Module Form */}
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              if (!newKpiName || !selectedHeaderFromDropdown) return;
-              if (kpiRegistry.some(k => k.excelColumnKeyword === selectedHeaderFromDropdown)) {
-                alert("This column header keyword parameter has already been mapped.");
-                return;
-              }
-              setKpiRegistry([...kpiRegistry, { id: `custom_${Date.now()}`, displayName: newKpiName, excelColumnKeyword: selectedHeaderFromDropdown, category: newKpiCat }]);
-              setNewKpiName(""); 
-            }} style={{ display: "flex", gap: "10px", backgroundColor: theme.bg, padding: "16px", borderRadius: "8px", border: `1px solid ${theme.border}` }}>
-              
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
-                <label style={{ fontSize: "11px", color: theme.accent }}>Custom UI Label</label>
-                <input type="text" placeholder="e.g. Talk Time Avg" value={newKpiName} onChange={e => setNewKpiName(e.target.value)} style={{ padding: "8px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px", fontSize: "12px" }} />
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
-                <label style={{ fontSize: "11px", color: theme.accent }}>Select Detected Column Header</label>
-                <select value={selectedHeaderFromDropdown} onChange={e => setSelectedHeaderFromDropdown(e.target.value)} style={{ padding: "8px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px", fontSize: "12px" }}>
-                  {allDetectedHeaders.length === 0 ? (
-                    <option>-- Upload an Excel file first --</option>
-                  ) : (
-                    allDetectedHeaders.map(h => <option key={h} value={h}>{h}</option>)
-                  )}
-                </select>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <label style={{ fontSize: "11px", color: theme.accent }}>Category Pillar</label>
-                <select value={newKpiCat} onChange={e => setNewKpiCat(e.target.value as any)} style={{ padding: "8px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px", fontSize: "12px" }}>
-                  <option value="Productivity">Productivity</option>
-                  <option value="Quality">Quality</option>
-                  <option value="Compliance">Compliance</option>
-                </select>
-              </div>
-
-              <button type="submit" disabled={allDetectedHeaders.length === 0} style={{ backgroundColor: allDetectedHeaders.length === 0 ? theme.surfaceLight : theme.accent, color: theme.bg, padding: "0 20px", border: "none", borderRadius: "4px", fontWeight: "bold", cursor: allDetectedHeaders.length === 0 ? "not-allowed" : "pointer", fontSize: "12px", alignSelf: "flex-end", height: "34px" }}>＋ Integrate KPI</button>
-            </form>
-          </div>
-
-          {/* DYNAMIC FLUID DATA MATRIX GRID */}
-          <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "24px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-              <div><h3 style={{ color: theme.accent, margin: 0 }}>📊 3D Fluid Matrix Grid</h3><p style={{ fontSize: "12px", color: theme.textMuted, margin: "2px 0 0 0" }}>Displaying ONLY parameter choices selected in settings above.</p></div>
-              
-              <div style={{ display: "flex", gap: "6px" }}>
-                {["All", "Productivity", "Quality", "Compliance"].map(cat => (
-                  <button key={cat} onClick={() => setSelectedCategoryFilter(cat)} style={{ padding: "6px 12px", backgroundColor: selectedCategoryFilter === cat ? theme.accent : theme.bg, color: selectedCategoryFilter === cat ? theme.bg : "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: "bold" }}>{cat}</button>
-                ))}
-              </div>
-            </div>
-
-            {parsedDataRows.length === 0 ? (
-              <div style={{ padding: "40px", border: `2px dashed ${theme.border}`, borderRadius: "8px", textAlign: "center", color: theme.textMuted }}>Ingest your spreadsheet matrix via the top button component to feed data models.</div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
-                  <thead>
-                    <tr style={{ backgroundColor: theme.surfaceLight, color: theme.accent, borderBottom: `2px solid ${theme.border}` }}>
-                      <th style={{ padding: "12px", position: "sticky", left: 0, backgroundColor: theme.surfaceLight }}>Egoist Handle</th>
-                      {kpiRegistry.filter(k => selectedCategoryFilter === "All" || k.category === selectedCategoryFilter).map(kpi => (
-                        <th key={kpi.id} style={{ padding: "12px", borderRight: `1px solid ${theme.border}` }}>{kpi.displayName}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parsedDataRows.slice(5).filter(row => row && row[0] && String(row[0]).toLowerCase() !== "agent" && String(row[0]).toLowerCase() !== "total").map((row, idx) => (
-                      <tr key={idx} style={{ borderBottom: `1px solid ${theme.border}`, backgroundColor: idx % 2 === 0 ? theme.surface : theme.bg }}>
-                        <td style={{ padding: "10px", fontWeight: "bold", position: "sticky", left: 0, backgroundColor: idx % 2 === 0 ? theme.surface : theme.bg, color: theme.accent }}>@{String(row[0]).trim()}</td>
-                        {kpiRegistry.filter(k => selectedCategoryFilter === "All" || k.category === selectedCategoryFilter).map(kpi => {
-                          const rawVal = pullLiveCellData(String(row[0]), kpi.excelColumnKeyword);
-                          const formattedVal = typeof rawVal === "number" ? (rawVal < 1 ? `${(rawVal * 100).toFixed(2)}%` : rawVal.toFixed(2)) : "—";
-                          return <td key={kpi.id} style={{ padding: "10px", borderRight: `1px solid ${theme.border}` }}>{formattedVal}</td>
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              </>
             )}
           </div>
 
+          {/* RIGHT COMPONENT MATRIX MAIN GRID LAYOUT */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "24px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
+                <div><h3 style={{ margin: 0, color: theme.accent }}>📊 3D Fluid Matrix Grid</h3><p style={{ fontSize: "12px", color: theme.textMuted, margin: "2px 0 0 0" }}>Displaying ONLY active verified KPI settings.</p></div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {["All", "Productivity", "Quality", "Compliance"].map(cat => (
+                    <button key={cat} onClick={() => setSelectedCategoryFilter(cat)} style={{ padding: "6px 12px", backgroundColor: selectedCategoryFilter === cat ? theme.accent : theme.bg, color: selectedCategoryFilter === cat ? theme.bg : "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", cursor: "pointer", fontSize: "12px" }}>{cat}</button>
+                  ))}
+                </div>
+              </div>
+
+              {discoveredAgents.length === 0 ? <p style={{ color: theme.textMuted, textAlign: "center", padding: "40px" }}>Awaiting localized file mapping integration stream...</p> : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                    <thead>
+                      <tr style={{ backgroundColor: theme.surfaceLight, color: theme.accent, borderBottom: `2px solid ${theme.border}` }}>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Egoist Handle</th>
+                        {kpiRegistry.filter(k => selectedCategoryFilter === "All" || k.category === selectedCategoryFilter).map(kpi => (
+                          <th key={kpi.id} style={{ padding: "12px" }}>{kpi.displayName}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {discoveredAgents.map((ag, idx) => (
+                        <tr key={ag.login} style={{ backgroundColor: idx % 2 === 0 ? theme.surface : theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                          <td style={{ padding: "10px", color: theme.accent, fontWeight: "bold" }}>@{ag.login}</td>
+                          {kpiRegistry.filter(k => selectedCategoryFilter === "All" || k.category === selectedCategoryFilter).map(kpi => {
+                            const recs = masterHistoryMap[ag.login] || [];
+                            const latestWeek = recs[recs.length - 1];
+                            const raw = latestWeek ? latestWeek.metrics[kpi.id] || latestWeek.metrics[kpi.excelColumnKeyword] : "—";
+                            const fmt = typeof raw === "number" ? (raw < 1 ? `${(raw * 100).toFixed(2)}%` : raw.toFixed(2)) : "—";
+                            return <td key={kpi.id} style={{ padding: "10px", textAlign: "center" }}>{fmt}</td>;
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ==========================================
+          ⚙️ TAB VIEW AREA 2: SEPARATED INDEPENDENT SETTINGS PANEL
+         ========================================== */}
+      {activeTab === "parameters" && (
+        <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "32px" }}>
+          <h3 style={{ color: theme.accent, marginTop: 0 }}>⚙️ Mapped Systems Parameter Portfolio</h3>
+          <p style={{ fontSize: "13px", color: theme.textMuted, marginBottom: "24px" }}>Manage what metrics display across the application. Added choices sync natively across the tables and radar charts.</p>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "32px" }}>
+            {kpiRegistry.map(k => (
+              <div key={k.id} style={{ display: "flex", alignItems: "center", gap: "10px", backgroundColor: theme.bg, border: `1px solid ${theme.border}`, padding: "8px 14px", borderRadius: "6px" }}>
+                <span style={{ fontSize: "13px" }}><strong>{k.displayName}</strong> <span style={{ color: theme.textMuted, fontSize: "11px" }}>({k.excelColumnKeyword})</span></span>
+                <button onClick={() => setKpiRegistry(kpiRegistry.filter(item => item.id !== k.id))} style={{ background: "none", border: "none", color: theme.danger, fontWeight: "bold", cursor: "pointer" }}>✕</button>
+              </div>
+            ))}
+          </div>
+
+          <h4 style={{ color: theme.accentGold, marginBottom: "12px" }}>＋ Integrate New Column Metric Parameter</h4>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!newKpiName || !selectedHeaderFromDropdown) return;
+            setKpiRegistry([...kpiRegistry, { id: `custom_${Date.now()}`, displayName: newKpiName, excelColumnKeyword: selectedHeaderFromDropdown, category: newKpiCat }]);
+            setNewKpiName("");
+          }} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "16px", alignItems: "end", backgroundColor: theme.bg, padding: "20px", borderRadius: "8px", border: `1px solid ${theme.border}` }}>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", color: theme.accent }}>Custom UI Display Label</label>
+              <input type="text" placeholder="e.g. Resolution Rate" value={newKpiName} onChange={e => setNewKpiName(e.target.value)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }} />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", color: theme.accent }}>Select Detected Column From Excel Menu</label>
+              <select value={selectedHeaderFromDropdown} onChange={e => setSelectedHeaderFromDropdown(e.target.value)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }}>
+                {allDetectedHeaders.length === 0 ? <option>-- Ingest a file to read headers --</option> : allDetectedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", color: theme.accent }}>Category Core Pillar</label>
+              <select value={newKpiCat} onChange={e => setNewKpiCat(e.target.value as any)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }}>
+                <option value="Productivity">Productivity</option>
+                <option value="Quality">Quality</option>
+                <option value="Compliance">Compliance</option>
+              </select>
+            </div>
+
+            <button type="submit" style={{ backgroundColor: theme.accent, color: theme.bg, padding: "12px 24px", border: "none", borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>Inject Option</button>
+          </form>
+        </div>
+      )}
+
+      {/* ==========================================
+          ⚔️ TAB VIEW AREA 3: 6-WEEK PLAN OF ACTION PAGE
+         ========================================== */}
+      {activeTab === "actionPlan" && (
+        <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "32px" }}>
+          <div style={{ borderBottom: `1px solid ${theme.border}`, paddingBottom: "16px", marginBottom: "24px" }}>
+            <h2 style={{ color: theme.accentGold, margin: 0 }}>⚔️ Ego Weapon Awakening: 6-Week Action Roadmap</h2>
+            <p style={{ fontSize: "13px", color: theme.textMuted, marginTop: "4px" }}>Performance calibration pipeline milestone tracking infrastructure for {selectedAgentLogin ? `@${selectedAgentLogin}` : "active squad roster"}.</p>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {milestones.map((milestone, idx) => (
+              <div key={idx} style={{ backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: "12px", padding: "24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "20px", alignItems: "flex-start" }}>
+                  <div style={{ backgroundColor: theme.surfaceLight, padding: "8px 16px", borderRadius: "6px", fontWeight: "bold", color: theme.accent, fontSize: "14px", whiteSpace: "nowrap" }}>{milestone.week}</div>
+                  <div>
+                    <h4 style={{ margin: "0 0 4px 0", fontSize: "16px", color: theme.textLight }}>{milestone.title}</h4>
+                    <p style={{ margin: 0, fontSize: "13px", color: theme.textMuted }}>{milestone.desc}</p>
+                  </div>
+                </div>
+                <div>
+                  <button 
+                    onClick={() => {
+                      const updated = [...milestones];
+                      updated[idx].completed = !updated[idx].completed;
+                      setMilestones(updated);
+                    }}
+                    style={{ padding: "8px 16px", backgroundColor: milestone.completed ? theme.success : "transparent", color: milestone.completed ? theme.bg : theme.accentGold, border: `1px solid ${milestone.completed ? theme.success : theme.accentGold}`, borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}
+                  >
+                    {milestone.completed ? "✓ Stage Unlocked" : "⬡ Awaken Stage"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* MULTI-WEEK CHRONOLOGICAL LOCAL HISTORY TRACKING PANEL */}
+          <div style={{ marginTop: "40px", paddingTop: "24px", borderTop: `1px solid ${theme.border}` }}>
+            <h3 style={{ color: theme.accent }}>📜 Local Run Record History Ledger</h3>
+            {!selectedAgentLogin ? <p style={{ color: theme.textMuted }}>Select an Egoist at the top view to generate target run records maps.</p> : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginTop: "16px" }}>
+                {activeAgentHistory.map((run, index) => (
+                  <div key={index} style={{ backgroundColor: theme.bg, padding: "20px", borderRadius: "8px", border: `1px solid ${theme.border}`, borderLeft: `4px solid ${theme.accent}` }}>
+                    <h4 style={{ margin: "0 0 10px 0", color: theme.accentGold }}>{run.weekId} Run Upload Log</h4>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "12px" }}>
+                      {kpiRegistry.map(kpi => {
+                        const score = run.metrics[kpi.id] || run.metrics[kpi.excelColumnKeyword] || "—";
+                        const formatted = typeof score === "number" ? (score < 1 ? `${(score * 100).toFixed(1)}%` : score.toFixed(1)) : score;
+                        return <div key={kpi.id} style={{ color: theme.textMuted }}>{kpi.displayName}: <span style={{ color: theme.textLight, fontWeight: "bold" }}>{formatted}</span></div>
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -4,7 +4,7 @@ import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 
 // ==========================================
-// 🗂️ HOOK TYPE STRUCTURES
+// 🗂️ STRUCTURE BLUEPRINTS
 // ==========================================
 interface KPIMapping {
   id: string;
@@ -40,20 +40,20 @@ const theme = {
 export default function BlueLockMA() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Tab Navigation Hub
+  // Navigation State Tab Engine
   const [activeTab, setActiveTab] = useState<"dashboard" | "parameters" | "actionPlan">("dashboard");
   
-  // Core Selections States
+  // Core Selection Target States
   const [selectedAgentLogin, setSelectedAgentLogin] = useState<string>("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All");
 
-  // Local Recalculation History & Aggregated Maps
+  // Local History Recalculation Repositories
   const [masterHistoryMap, setMasterHistoryMap] = useState<Record<string, HistoricalWeekRecord[]>>({});
   const [discoveredAgents, setDiscoveredAgents] = useState<DynamicAgent[]>([]);
   const [allDetectedHeaders, setAllDetectedHeaders] = useState<string[]>([]);
   const [selectedHeaderFromDropdown, setSelectedHeaderFromDropdown] = useState<string>("");
 
-  // Parameter Control Core (Users can dynamically Star to select the 6 Hexagon favorites)
+  // Base Parameter Mappings Core Configuration
   const [kpiRegistry, setKpiRegistry] = useState<KPIMapping[]>([
     { id: "ccx_t2b", displayName: "CCX Top 2 Box", excelColumnKeyword: "CCX-Overall Top-Two Box %", category: "Quality", isHexFavorite: true },
     { id: "missed_overall", displayName: "Overall Missed Rate", excelColumnKeyword: "Overall Missed Contact Rate", category: "Productivity", isHexFavorite: true },
@@ -66,7 +66,6 @@ export default function BlueLockMA() {
   const [newKpiName, setNewKpiName] = useState("");
   const [newKpiCat, setNewKpiCat] = useState<"Quality" | "Productivity" | "Compliance">("Productivity");
 
-  // Milestone Action Plan
   const [milestones, setMilestones] = useState([
     { week: "Weeks 1–2", title: "Deconstruction & Target Framing", completed: true, desc: "Isolate precise root-causes and baseline current metrics." },
     { week: "Weeks 3–4", title: "Analytical Blueprint Emulation", completed: false, desc: "Perform side-by-side active sessions and calibrate handling procedures." },
@@ -74,7 +73,7 @@ export default function BlueLockMA() {
   ]);
 
   // ==========================================
-  // 📥 MULTI-FILE MERGE INGESTION STREAM PIPELINE
+  // 📥 AUTO-CLEANING MATRIX INGESTION ENGINE
   // ==========================================
   const processUploadedExcelFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -90,23 +89,27 @@ export default function BlueLockMA() {
 
         if (!rawRows || rawRows.length === 0) return;
 
-        // Auto-locate layout header row indices dynamically across various types
-        let headerRowIdx = 0;
-        let detectedWeek = "Current Generation";
+        // 1. DYNAMIC HEADER LOCATOR: Row with the maximum descriptive density wins
+        let bestHeaderIdx = 0;
+        let maxFilledColumns = 0;
 
-        for (let r = 0; r < Math.min(rawRows.length, 12); r++) {
-          const rowStr = (rawRows[r] || []).map(c => String(c || "").toLowerCase().trim());
-          if (rowStr.includes("agent") || rowStr.includes("site group-channel") || rowStr.includes("marketplace (w/ week)") || rowStr.includes("site group-contact type data")) {
-            headerRowIdx = r;
-            break;
+        for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
+          const rowCells = rawRows[r] || [];
+          const filledCount = rowCells.filter(c => c !== null && String(c).trim() !== "").length;
+          
+          // Exclude system main title banners spanning row 0
+          if (filledCount > maxFilledColumns && r !== 0) {
+            maxFilledColumns = filledCount;
+            bestHeaderIdx = r;
           }
         }
 
-        // Search context for run week markers
-        for (let r = 0; r < Math.min(rawRows.length, 8); r++) {
-          const rowCells = rawRows[r] || [];
-          for (let c = 0; c < rowCells.length; c++) {
-            const txt = String(rowCells[c]).trim();
+        // Detect Week timeline parameters dynamically
+        let detectedWeek = "Current Generation";
+        for (let r = 0; r < Math.min(rawRows.length, bestHeaderIdx + 1); r++) {
+          const cells = rawRows[r] || [];
+          for (let c = 0; c < cells.length; c++) {
+            const txt = String(cells[c]).trim();
             if (txt.toLowerCase().includes("week") || txt === "25" || txt === "24") {
               detectedWeek = txt.toLowerCase().includes("week") ? txt : `Week ${txt}`;
               break;
@@ -114,25 +117,40 @@ export default function BlueLockMA() {
           }
         }
 
-        const headers = (rawRows[headerRowIdx] || []).map((h: any) => String(h || "").trim());
-        const filteredHeaders = headers.filter(h => h && h.toLowerCase() !== "agent" && !h.toLowerCase().includes("week") && h.length > 1);
-        
-        if (filteredHeaders.length > 0) {
-          setAllDetectedHeaders(prev => Array.from(new Set([...prev, ...filteredHeaders])));
-          setSelectedHeaderFromDropdown(filteredHeaders[0]);
+        const headers = (rawRows[bestHeaderIdx] || []).map((h: any) => String(h || "").trim());
+        const filteredKPIHeaders = headers.filter(h => h && h.toLowerCase() !== "agent" && !h.toLowerCase().includes("week") && h.length > 1);
+
+        if (filteredKPIHeaders.length > 0) {
+          setAllDetectedHeaders(prev => Array.from(new Set([...prev, ...filteredKPIHeaders])));
+          setSelectedHeaderFromDropdown(filteredKPIHeaders[0]);
         }
 
         const localHistoryUpdate = { ...masterHistoryMap };
         const updatedAgentsList = [...discoveredAgents];
 
-        rawRows.slice(headerRowIdx + 1).forEach((row) => {
-          if (!row || !row[0] || String(row[0]).trim() === "" || String(row[0]).toLowerCase().includes("total") || String(row[0]).toLowerCase() === "agent") return;
-
+        // 2. DYNAMIC LOGIN FILTERING CORE
+        rawRows.slice(bestHeaderIdx + 1).forEach((row) => {
+          if (!row || row[0] === undefined || row[0] === null) return;
+          
           const loginStr = String(row[0]).trim();
-          
+          const lowerLogin = loginStr.toLowerCase();
+
+          // Blacklist system headers, numeric offsets, and structural words from polluting logins menu
+          if (
+            loginStr === "" || 
+            lowerLogin.includes("total") || 
+            lowerLogin.includes("agent") || 
+            lowerLogin.includes("amazon") || 
+            lowerLogin.includes("site group") || 
+            lowerLogin.includes("marketplace") ||
+            lowerLogin.includes("none") ||
+            lowerLogin.includes("null") ||
+            !isNaN(Number(loginStr)) // Drops standalone numbers like 20, 21, 22
+          ) {
+            return; 
+          }
+
           if (!localHistoryUpdate[loginStr]) localHistoryUpdate[loginStr] = [];
-          
-          // Locate existing record for this week to allow additive column merging
           let existingWeekRecord = localHistoryUpdate[loginStr].find(record => record.weekId === detectedWeek);
           
           if (!existingWeekRecord) {
@@ -140,16 +158,16 @@ export default function BlueLockMA() {
             localHistoryUpdate[loginStr].push(existingWeekRecord);
           }
 
-          // Additively map all newly introduced columns into this single agent timeline node
+          // Merge current iteration columns metrics payload natively
           headers.forEach((h, index) => {
             if (!h) return;
             const targetKpi = kpiRegistry.find(k => k.excelColumnKeyword.toLowerCase() === h.toLowerCase());
-            const parsedVal = row[index] !== undefined ? row[index] : "—";
+            const parsedCellVal = row[index] !== undefined ? row[index] : "—";
             
             if (targetKpi) {
-              existingWeekRecord!.metrics[targetKpi.id] = parsedVal;
+              existingWeekRecord!.metrics[targetKpi.id] = parsedCellVal;
             } else {
-              existingWeekRecord!.metrics[h] = parsedVal;
+              existingWeekRecord!.metrics[h] = parsedCellVal;
             }
           });
 
@@ -161,11 +179,11 @@ export default function BlueLockMA() {
         setMasterHistoryMap(localHistoryUpdate);
         setDiscoveredAgents(updatedAgentsList);
         
-        if (updatedAgentsList.length > 0 && !selectedAgentLogin) {
+        if (updatedAgentsList.length > 0 && (!selectedAgentLogin || !updatedAgentsList.some(a => a.login === selectedAgentLogin))) {
           setSelectedAgentLogin(updatedAgentsList[0].login);
         }
 
-        alert(`Merged file data into Unified Core Grid for ${detectedWeek}!`);
+        alert(`Ingested and merged operational files data into core grid structures.`);
       } catch (err) {
         console.error(err);
       }
@@ -181,7 +199,6 @@ export default function BlueLockMA() {
       alert("The Ego Matrix Hexagon is locked to maximum 6 active favorite components. Unstar an old one first!");
       return;
     }
-
     setKpiRegistry(kpiRegistry.map(k => k.id === id ? { ...k, isHexFavorite: !k.isHexFavorite } : k));
   };
 
@@ -189,7 +206,6 @@ export default function BlueLockMA() {
   const activeAgentHistory = selectedAgentLogin ? (masterHistoryMap[selectedAgentLogin] || []) : [];
   const runningHexKPIs = kpiRegistry.filter(k => k.isHexFavorite);
 
-  // Helper coordinates mapping logic to build out dynamic visible SVG Hexagon shapes graded 0-100
   const renderDynamicHexPoints = () => {
     const center = 100;
     const maxRadius = 75;
@@ -221,7 +237,7 @@ export default function BlueLockMA() {
   return (
     <div style={{ backgroundColor: theme.bg, color: theme.textLight, minHeight: "100vh", padding: "32px", fontFamily: "sans-serif" }}>
       
-      {/* 👑 HEAD HUB BANNER */}
+      {/* HUB HEADER BAR COMPONENTS */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `2px solid ${theme.border}`, paddingBottom: "20px", marginBottom: "32px" }}>
         <div>
           <h1 style={{ fontSize: "26px", fontWeight: "900", color: theme.accent, letterSpacing: "1.5px", margin: 0 }}>PROJECT: BLUELOCKMA</h1>
@@ -237,7 +253,7 @@ export default function BlueLockMA() {
           <input type="file" ref={fileInputRef} onChange={processUploadedExcelFiles} accept=".xlsx, .xls" style={{ display: "none" }} />
           
           <select value={selectedAgentLogin} onChange={(e) => setSelectedAgentLogin(e.target.value)} style={{ backgroundColor: theme.surface, color: theme.accent, border: `2px solid ${theme.accent}`, padding: "10px 16px", borderRadius: "6px", fontWeight: "bold" }}>
-            {discoveredAgents.length === 0 ? <option value="">-- Ingest File to Load Egoists --</option> : discoveredAgents.map(a => <option key={a.login} value={a.login}>@{a.login}</option>)}
+            {discoveredAgents.length === 0 ? <option value="">-- Drop Files to Filter Logins --</option> : discoveredAgents.map(a => <option key={a.login} value={a.login}>@{a.login}</option>)}
           </select>
         </div>
       </div>
@@ -248,13 +264,13 @@ export default function BlueLockMA() {
       {activeTab === "dashboard" && (
         <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: "32px" }}>
           
-          {/* PROFILE COMPONENT GRID PILLARS */}
+          {/* PROFILE LEFT CORES */}
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             {!currentAgentData ? (
               <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "40px", textAlign: "center" }}>
                 <div style={{ fontSize: "50px" }}>👤</div>
                 <h3 style={{ color: theme.accent }}>NO EGOIST MOUNTED</h3>
-                <p style={{ fontSize: "12px", color: theme.textMuted }}>Upload your metric files to construct a live profile.</p>
+                <p style={{ fontSize: "12px", color: theme.textMuted }}>Upload your operational data extraction worksheets to view metrics.</p>
               </div>
             ) : (
               <>
@@ -277,7 +293,7 @@ export default function BlueLockMA() {
                   </div>
                 </div>
 
-                {/* ⬡ THE 6-FAVORITE CONFIGURED MATRIX HEXAGON */}
+                {/* ⬡ THE CONFIGURED RADAR MATRIX HEXAGON */}
                 <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "20px", textAlign: "center" }}>
                   <h4 style={{ color: theme.accent, margin: "0 0 4px 0", fontSize: "13px", textAlign: "left" }}>⬡ EGO MATRIX FAVORITES (0-100)</h4>
                   <p style={{ fontSize: "11px", color: theme.textMuted, textAlign: "left", margin: "0 0 12px 0" }}>Starred choice items map to vertices dynamically.</p>
@@ -307,7 +323,7 @@ export default function BlueLockMA() {
             )}
           </div>
 
-          {/* RIGHT UNIFIED CONCURRENT WORKSPACE MATRIX GRID */}
+          {/* RIGHT UNIFIED CONCURRENT MATRIX GRID */}
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "24px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
@@ -353,7 +369,7 @@ export default function BlueLockMA() {
       )}
 
       {/* ==========================================
-          ⚙️ TAB 2: PARAMETERS SETTINGS PANEL
+          ⚙️ TAB 2: SEPARATED PARAMETERS PANEL
          ========================================== */}
       {activeTab === "parameters" && (
         <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "32px" }}>
@@ -438,7 +454,7 @@ export default function BlueLockMA() {
             ))}
           </div>
 
-          {/* LOCALIZED LEDGER TIMELINE SCREEN */}
+          {/* LOCAL RUN LEDGER HISTORICAL RECORDS SCREEN */}
           <div style={{ marginTop: "40px", paddingTop: "24px", borderTop: `1px solid ${theme.border}` }}>
             <h3 style={{ color: theme.accent }}>📜 Local Run Record History Ledger</h3>
             {!selectedAgentLogin ? <p style={{ color: theme.textMuted }}>Select an Egoist at the top view to generate target run records maps.</p> : (

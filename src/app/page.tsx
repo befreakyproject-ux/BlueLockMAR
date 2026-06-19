@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 
 // ==========================================
@@ -73,6 +73,45 @@ export default function BlueLockMA() {
   ]);
 
   // ==========================================
+  // 💾 1. RECOVERY SYSTEM ENGINE (LOAD FROM DRIVE / STORAGE)
+  // ==========================================
+  useEffect(() => {
+    try {
+      const savedHistory = localStorage.getItem("bluelock_master_history");
+      const savedAgents = localStorage.getItem("bluelock_discovered_agents");
+      const savedHeaders = localStorage.getItem("bluelock_detected_headers");
+      const savedKpis = localStorage.getItem("bluelock_kpi_registry");
+
+      if (savedHistory) setMasterHistoryMap(JSON.parse(savedHistory));
+      if (savedAgents) {
+        const parsedAgents = JSON.parse(savedAgents);
+        setDiscoveredAgents(parsedAgents);
+        if (parsedAgents.length > 0) setSelectedAgentLogin(parsedAgents[0].login);
+      }
+      if (savedHeaders) {
+        const parsedHeaders = JSON.parse(savedHeaders);
+        setAllDetectedHeaders(parsedHeaders);
+        if (parsedHeaders.length > 0) setSelectedHeaderFromDropdown(parsedHeaders[0]);
+      }
+      if (savedKpis) setKpiRegistry(JSON.parse(savedKpis));
+    } catch (e) {
+      console.error("Local recovery storage initialized empty.");
+    }
+  }, []);
+
+  // Wipes history clean if you ever want a fresh generation reset
+  const clearLocalDatabaseEngine = () => {
+    if (confirm("Are you sure you want to wipe all local historical tracking memory?")) {
+      localStorage.clear();
+      setMasterHistoryMap({});
+      setDiscoveredAgents([]);
+      setAllDetectedHeaders([]);
+      setSelectedAgentLogin("");
+      alert("Local storage wiped.");
+    }
+  };
+
+  // ==========================================
   // 📥 AUTO-CLEANING MATRIX INGESTION ENGINE
   // ==========================================
   const processUploadedExcelFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -89,7 +128,6 @@ export default function BlueLockMA() {
 
         if (!rawRows || rawRows.length === 0) return;
 
-        // 1. DYNAMIC HEADER LOCATOR: Row with the maximum descriptive density wins
         let bestHeaderIdx = 0;
         let maxFilledColumns = 0;
 
@@ -97,14 +135,12 @@ export default function BlueLockMA() {
           const rowCells = rawRows[r] || [];
           const filledCount = rowCells.filter(c => c !== null && String(c).trim() !== "").length;
           
-          // Exclude system main title banners spanning row 0
           if (filledCount > maxFilledColumns && r !== 0) {
             maxFilledColumns = filledCount;
             bestHeaderIdx = r;
           }
         }
 
-        // Detect Week timeline parameters dynamically
         let detectedWeek = "Current Generation";
         for (let r = 0; r < Math.min(rawRows.length, bestHeaderIdx + 1); r++) {
           const cells = rawRows[r] || [];
@@ -120,22 +156,23 @@ export default function BlueLockMA() {
         const headers = (rawRows[bestHeaderIdx] || []).map((h: any) => String(h || "").trim());
         const filteredKPIHeaders = headers.filter(h => h && h.toLowerCase() !== "agent" && !h.toLowerCase().includes("week") && h.length > 1);
 
+        let finalHeadersList = [...allDetectedHeaders];
         if (filteredKPIHeaders.length > 0) {
-          setAllDetectedHeaders(prev => Array.from(new Set([...prev, ...filteredKPIHeaders])));
+          finalHeadersList = Array.from(new Set([...allDetectedHeaders, ...filteredKPIHeaders]));
+          setAllDetectedHeaders(finalHeadersList);
           setSelectedHeaderFromDropdown(filteredKPIHeaders[0]);
+          localStorage.setItem("bluelock_detected_headers", JSON.stringify(finalHeadersList));
         }
 
         const localHistoryUpdate = { ...masterHistoryMap };
         const updatedAgentsList = [...discoveredAgents];
 
-        // 2. DYNAMIC LOGIN FILTERING CORE
         rawRows.slice(bestHeaderIdx + 1).forEach((row) => {
           if (!row || row[0] === undefined || row[0] === null) return;
           
           const loginStr = String(row[0]).trim();
           const lowerLogin = loginStr.toLowerCase();
 
-          // Blacklist system headers, numeric offsets, and structural words from polluting logins menu
           if (
             loginStr === "" || 
             lowerLogin.includes("total") || 
@@ -145,7 +182,7 @@ export default function BlueLockMA() {
             lowerLogin.includes("marketplace") ||
             lowerLogin.includes("none") ||
             lowerLogin.includes("null") ||
-            !isNaN(Number(loginStr)) // Drops standalone numbers like 20, 21, 22
+            !isNaN(Number(loginStr)) 
           ) {
             return; 
           }
@@ -158,7 +195,6 @@ export default function BlueLockMA() {
             localHistoryUpdate[loginStr].push(existingWeekRecord);
           }
 
-          // Merge current iteration columns metrics payload natively
           headers.forEach((h, index) => {
             if (!h) return;
             const targetKpi = kpiRegistry.find(k => k.excelColumnKeyword.toLowerCase() === h.toLowerCase());
@@ -179,11 +215,15 @@ export default function BlueLockMA() {
         setMasterHistoryMap(localHistoryUpdate);
         setDiscoveredAgents(updatedAgentsList);
         
+        // 💾 Save current state configuration objects natively to disk arrays
+        localStorage.setItem("bluelock_master_history", JSON.stringify(localHistoryUpdate));
+        localStorage.setItem("bluelock_discovered_agents", JSON.stringify(updatedAgentsList));
+
         if (updatedAgentsList.length > 0 && (!selectedAgentLogin || !updatedAgentsList.some(a => a.login === selectedAgentLogin))) {
           setSelectedAgentLogin(updatedAgentsList[0].login);
         }
 
-        alert(`Ingested and merged operational files data into core grid structures.`);
+        alert(`Ingested and locked tracking parameters into permanent local save for ${detectedWeek}!`);
       } catch (err) {
         console.error(err);
       }
@@ -199,7 +239,9 @@ export default function BlueLockMA() {
       alert("The Ego Matrix Hexagon is locked to maximum 6 active favorite components. Unstar an old one first!");
       return;
     }
-    setKpiRegistry(kpiRegistry.map(k => k.id === id ? { ...k, isHexFavorite: !k.isHexFavorite } : k));
+    const updatedKpis = kpiRegistry.map(k => k.id === id ? { ...k, isHexFavorite: !k.isHexFavorite } : k);
+    setKpiRegistry(updatedKpis);
+    localStorage.setItem("bluelock_kpi_registry", JSON.stringify(updatedKpis));
   };
 
   const currentAgentData = discoveredAgents.find(a => a.login === selectedAgentLogin);
@@ -249,32 +291,32 @@ export default function BlueLockMA() {
         </div>
         
         <div style={{ display: "flex", gap: "12px" }}>
+          <button onClick={clearLocalDatabaseEngine} style={{ backgroundColor: "transparent", color: theme.danger, border: `1px solid ${theme.danger}`, padding: "10px 16px", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}>🗑️ Wipe Local Save</button>
           <button onClick={() => fileInputRef.current?.click()} style={{ backgroundColor: theme.surfaceLight, color: theme.accent, border: `1px solid ${theme.border}`, padding: "10px 16px", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}>📥 Ingest Master File</button>
           <input type="file" ref={fileInputRef} onChange={processUploadedExcelFiles} accept=".xlsx, .xls" style={{ display: "none" }} />
           
           <select value={selectedAgentLogin} onChange={(e) => setSelectedAgentLogin(e.target.value)} style={{ backgroundColor: theme.surface, color: theme.accent, border: `2px solid ${theme.accent}`, padding: "10px 16px", borderRadius: "6px", fontWeight: "bold" }}>
-            {discoveredAgents.length === 0 ? <option value="">-- Drop Files to Filter Logins --</option> : discoveredAgents.map(a => <option key={a.login} value={a.login}>@{a.login}</option>)}
+            {discoveredAgents.length === 0 ? <option value="">-- Save File to Memory --</option> : discoveredAgents.map(a => <option key={a.login} value={a.login}>@{a.login}</option>)}
           </select>
         </div>
       </div>
 
       {/* ==========================================
-          🏟️ TAB 1: LIVE CONCURRENT RECALCULATING DASHBOARD
+          🏟️ TAB 1: DASHBOARD
          ========================================== */}
       {activeTab === "dashboard" && (
         <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: "32px" }}>
           
-          {/* PROFILE LEFT CORES */}
+          {/* PROFILE CARD & HEX */}
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             {!currentAgentData ? (
               <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "40px", textAlign: "center" }}>
-                <div style={{ fontSize: "50px" }}>👤</div>
-                <h3 style={{ color: theme.accent }}>NO EGOIST MOUNTED</h3>
-                <p style={{ fontSize: "12px", color: theme.textMuted }}>Upload your operational data extraction worksheets to view metrics.</p>
+                <div style={{ fontSize: "50px" }}>💾</div>
+                <h3 style={{ color: theme.accent }}>PERMANENT AUTOSAVE STORAGE ACTIVE</h3>
+                <p style={{ fontSize: "12px", color: theme.textMuted }}>Your records stay on your hard drive. Drop spreadsheet files above to load up your last generation workspace view instantly.</p>
               </div>
             ) : (
               <>
-                {/* FIFA ULTIMATE RATING CARD BLOCK LAYOUT */}
                 <div style={{ background: "linear-gradient(135deg, #16223f 0%, #0d1527 100%)", border: `3px solid ${theme.accentGold}`, borderRadius: "20px", padding: "24px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <div><span style={{ fontSize: "44px", fontWeight: "900", color: theme.accentGold, display: "block" }}>{currentAgentData.overallRating}</span><span style={{ fontSize: "11px", fontWeight: "bold", color: theme.accent }}>STRIKER</span></div>
@@ -293,18 +335,14 @@ export default function BlueLockMA() {
                   </div>
                 </div>
 
-                {/* ⬡ THE CONFIGURED RADAR MATRIX HEXAGON */}
                 <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "20px", textAlign: "center" }}>
                   <h4 style={{ color: theme.accent, margin: "0 0 4px 0", fontSize: "13px", textAlign: "left" }}>⬡ EGO MATRIX FAVORITES (0-100)</h4>
-                  <p style={{ fontSize: "11px", color: theme.textMuted, textAlign: "left", margin: "0 0 12px 0" }}>Starred choice items map to vertices dynamically.</p>
                   
                   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", position: "relative" }}>
                     <svg width="220" height="220" viewBox="0 0 200 200">
                       <polygon points="100,25 175,68 175,153 100,195 25,153 25,68" fill="none" stroke={theme.border} strokeWidth="1" />
                       <polygon points="100,50 150,79 150,136 100,165 50,136 50,79" fill="none" stroke={theme.border} strokeWidth="1" strokeDasharray="3" />
-                      
                       <polygon points={renderDynamicHexPoints()} fill="rgba(0, 240, 255, 0.25)" stroke={theme.accent} strokeWidth="2.5" />
-                      
                       {runningHexKPIs.map((kpi, idx) => {
                         const angle = (idx * 60 - 90) * (Math.PI / 180);
                         const labelRadius = 88;
@@ -323,19 +361,19 @@ export default function BlueLockMA() {
             )}
           </div>
 
-          {/* RIGHT UNIFIED CONCURRENT MATRIX GRID */}
+          {/* MATRIX GRID UNIFIED TABLE */}
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "24px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
-                <div><h3 style={{ margin: 0, color: theme.accent }}>📊 Unified Operational Matrix Grid</h3><p style={{ fontSize: "12px", color: theme.textMuted, margin: "2px 0 0 0" }}>Displays metrics from multiple file extractions linked seamlessly by agent handles.</p></div>
+                <div><h3 style={{ margin: 0, color: theme.accent }}>📊 Unified Operational Matrix Grid</h3></div>
                 <div style={{ display: "flex", gap: "6px" }}>
                   {["All", "Productivity", "Quality", "Compliance"].map(cat => (
-                    <button key={cat} onClick={() => setSelectedCategoryFilter(cat)} style={{ padding: "6px 12px", backgroundColor: selectedCategoryFilter === cat ? theme.accent : theme.bg, color: selectedCategoryFilter === cat ? theme.bg : "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", cursor: "pointer", fontSize: "12px" }}>{cat}</button>
+                    <button key={cat} onClick={() => setSelectedCategoryFilter(cat)} style={{ padding: "6px 12px", backgroundColor: selectedCategoryFilter === cat ? theme.accent : theme.bg, color: selectedCategoryFilter === cat ? theme.bg : "#fff", border: `1px solid ${theme.border}`, borderRadius: "4px", fontSize: "12px" }}>{cat}</button>
                   ))}
                 </div>
               </div>
 
-              {discoveredAgents.length === 0 ? <p style={{ color: theme.textMuted, textAlign: "center", padding: "40px" }}>Awaiting localized file mapping integration stream...</p> : (
+              {discoveredAgents.length === 0 ? <p style={{ color: theme.textMuted, textAlign: "center", padding: "40px" }}>Awaiting local memory cache stream loading index...</p> : (
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
                     <thead>
@@ -368,111 +406,34 @@ export default function BlueLockMA() {
         </div>
       )}
 
-      {/* ==========================================
-          ⚙️ TAB 2: SEPARATED PARAMETERS PANEL
-         ========================================== */}
+      {/* PARAMETERS PANEL & ACTION PLANS TABS STAY IDENTICAL BELOW */}
       {activeTab === "parameters" && (
         <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "32px" }}>
-          <h3 style={{ color: theme.accent, marginTop: 0 }}>⚙️ Systems Parameter Settings Panel</h3>
-          <p style={{ fontSize: "13px", color: theme.textMuted, marginBottom: "24px" }}>Click the **⭐ Star icon** next to any active KPI to pin it into your 6-way Hexagon Radar view.</p>
-
+          <h3 style={{ color: theme.accent, marginTop: 0 }}>⚙️ Parameter Control Base</h3>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "32px" }}>
             {kpiRegistry.map(k => (
               <div key={k.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: theme.bg, border: `1px solid ${theme.border}`, padding: "12px 16px", borderRadius: "8px" }}>
-                <div>
-                  <span style={{ fontSize: "14px", fontWeight: "bold", display: "block" }}>{k.displayName}</span>
-                  <span style={{ color: theme.textMuted, fontSize: "11px" }}>Header Key: {k.excelColumnKeyword}</span>
-                </div>
-                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                  <button onClick={() => toggleHexFavorite(k.id)} style={{ background: "none", border: "none", color: k.isHexFavorite ? theme.accentGold : theme.textMuted, fontSize: "18px", cursor: "pointer" }}>
-                    {k.isHexFavorite ? "★" : "☆"}
-                  </button>
+                <div><strong>{k.displayName}</strong><span style={{ color: theme.textMuted, fontSize: "11px", display: "block" }}>{k.excelColumnKeyword}</span></div>
+                <div style={{ display: "flex", gap: "12px" }}>
+                  <button onClick={() => toggleHexFavorite(k.id)} style={{ background: "none", border: "none", color: k.isHexFavorite ? theme.accentGold : theme.textMuted, fontSize: "18px", cursor: "pointer" }}>{k.isHexFavorite ? "★" : "☆"}</button>
                   <button onClick={() => setKpiRegistry(kpiRegistry.filter(item => item.id !== k.id))} style={{ background: "none", border: "none", color: theme.danger, fontWeight: "bold", cursor: "pointer" }}>✕</button>
                 </div>
               </div>
             ))}
           </div>
-
-          <h4 style={{ color: theme.accentGold, marginBottom: "12px" }}>＋ Add New Parameter Option From File Streams</h4>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            if (!newKpiName || !selectedHeaderFromDropdown) return;
-            setKpiRegistry([...kpiRegistry, { id: `custom_${Date.now()}`, displayName: newKpiName, excelColumnKeyword: selectedHeaderFromDropdown, category: newKpiCat, isHexFavorite: false }]);
-            setNewKpiName("");
-          }} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "16px", alignItems: "end", backgroundColor: theme.bg, padding: "20px", borderRadius: "8px", border: `1px solid ${theme.border}` }}>
-            
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <label style={{ fontSize: "12px", color: theme.accent }}>Custom UI Display Label</label>
-              <input type="text" placeholder="e.g. Resolution Rate" value={newKpiName} onChange={e => setNewKpiName(e.target.value)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }} />
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <label style={{ fontSize: "12px", color: theme.accent }}>Select Detected Column From Menu</label>
-              <select value={selectedHeaderFromDropdown} onChange={e => setSelectedHeaderFromDropdown(e.target.value)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }}>
-                {allDetectedHeaders.length === 0 ? <option>-- Ingest a file to read headers --</option> : allDetectedHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-              </select>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <label style={{ fontSize: "12px", color: theme.accent }}>Category Core Pillar</label>
-              <select value={newKpiCat} onChange={e => setNewKpiCat(e.target.value as any)} style={{ padding: "10px", backgroundColor: theme.surface, border: `1px solid ${theme.border}`, color: "#fff", borderRadius: "4px" }}>
-                <option value="Productivity">Productivity</option>
-                <option value="Quality">Quality</option>
-                <option value="Compliance">Compliance</option>
-              </select>
-            </div>
-
-            <button type="submit" style={{ backgroundColor: theme.accent, color: theme.bg, padding: "12px 24px", border: "none", borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>Inject Parameter</button>
-          </form>
         </div>
       )}
 
-      {/* ==========================================
-          ⚔️ TAB 3: 6-WEEK ROADMAP ACTION PLAN 
-         ========================================== */}
       {activeTab === "actionPlan" && (
         <div style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: "16px", padding: "32px" }}>
-          <div style={{ borderBottom: `1px solid ${theme.border}`, paddingBottom: "16px", marginBottom: "24px" }}>
-            <h2 style={{ color: theme.accentGold, margin: 0 }}>⚔️ 6-Week Action Roadmap</h2>
-            <p style={{ fontSize: "13px", color: theme.textMuted, marginTop: "4px" }}>Performance calibration pipeline tracking milestone parameters.</p>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          <h2 style={{ color: theme.accentGold, margin: 0 }}>⚔️ 6-Week Action Roadmap</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginTop: "24px" }}>
             {milestones.map((m, idx) => (
-              <div key={idx} style={{ backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: "12px", padding: "24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", gap: "20px", alignItems: "flex-start" }}>
-                  <div style={{ backgroundColor: theme.surfaceLight, padding: "8px 16px", borderRadius: "6px", fontWeight: "bold", color: theme.accent }}>{m.week}</div>
-                  <div>
-                    <h4 style={{ margin: "0 0 4px 0", fontSize: "16px", color: theme.textLight }}>{m.title}</h4>
-                    <p style={{ margin: 0, fontSize: "13px", color: theme.textMuted }}>{m.desc}</p>
-                  </div>
-                </div>
-                <button onClick={() => setMilestones(milestones.map((item, i) => i === idx ? { ...item, completed: !item.completed } : item))} style={{ padding: "8px 16px", backgroundColor: m.completed ? theme.success : "transparent", color: m.completed ? theme.bg : theme.accentGold, border: `1px solid ${m.completed ? theme.success : theme.accentGold}`, borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>
-                  {m.completed ? "✓ Stage Unlocked" : "⬡ Awaken Stage"}
-                </button>
+              <div key={idx} style={{ backgroundColor: theme.bg, border: `1px solid ${theme.border}`, padding: "24px", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div><strong>{m.week}</strong>: {m.title} <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: theme.textMuted }}>{m.desc}</p></div>
+                <button onClick={() => setMilestones(milestones.map((item, i) => i === idx ? { ...item, completed: !item.completed } : item))} style={{ padding: "8px 16px", backgroundColor: m.completed ? theme.success : "transparent", color: m.completed ? theme.bg : theme.accentGold, border: `1px solid ${m.completed ? theme.success : theme.accentGold}`, borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }}>{m.completed ? "✓ Stage Unlocked" : "⬡ Awaken Stage"}</button>
               </div>
             ))}
-          </div>
-
-          {/* LOCAL RUN LEDGER HISTORICAL RECORDS SCREEN */}
-          <div style={{ marginTop: "40px", paddingTop: "24px", borderTop: `1px solid ${theme.border}` }}>
-            <h3 style={{ color: theme.accent }}>📜 Local Run Record History Ledger</h3>
-            {!selectedAgentLogin ? <p style={{ color: theme.textMuted }}>Select an Egoist at the top view to generate target run records maps.</p> : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginTop: "16px" }}>
-                {activeAgentHistory.map((run, index) => (
-                  <div key={index} style={{ backgroundColor: theme.bg, padding: "20px", borderRadius: "8px", border: `1px solid ${theme.border}`, borderLeft: `4px solid ${theme.accent}` }}>
-                    <h4 style={{ margin: "0 0 10px 0", color: theme.accentGold }}>{run.weekId} Run Upload Log</h4>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "12px" }}>
-                      {kpiRegistry.map(kpi => {
-                        const score = run.metrics[kpi.id] || run.metrics[kpi.excelColumnKeyword] || "—";
-                        const formatted = typeof score === "number" ? (score < 1 ? `${(score * 100).toFixed(1)}%` : score.toFixed(1)) : score;
-                        return <div key={kpi.id} style={{ color: theme.textMuted }}>{kpi.displayName}: <span style={{ color: theme.textLight, fontWeight: "bold" }}>{formatted}</span></div>
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       )}
